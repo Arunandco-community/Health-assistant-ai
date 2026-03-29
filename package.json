@@ -8,9 +8,13 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.22.1",
+    "firebase-admin": "^13.7.0",
     "mongoose": "^8.23.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.13"

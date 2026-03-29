@@ -6,6 +6,18 @@ dns.setDefaultResultOrder('ipv4first');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 require('dotenv').config();
+const admin = require('firebase-admin');
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert({
+            project_id: 'ai-health-assistant-39381',
+            private_key_id: '59fcc56812016af292ef336bb6d19a04d6cca824',
+            private_key: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+            client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-39381.iam.gserviceaccount.com',
+        })
+    });
+}
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -26,6 +38,8 @@ const UserSchema = new mongoose.Schema({
     age: { type: Number },
     gender: { type: String },
     location: { type: String },
+    phone: { type: String },
+    fcm_token: { type: String },
     created_at: { type: Date, default: Date.now }
 });
 
@@ -280,6 +294,31 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
     }
 }
 
+
+/* ─────────────────────────── FCM PUSH NOTIFICATION ─────────────────────────── */
+
+async function sendFCMNotification({ fcmToken, childName, vaccines, isUrgent = false }) {
+    if (!fcmToken) return { skipped: true };
+    const vaccineList = vaccines.map(v => v.vaccine_name).join(', ');
+    const title = isUrgent
+        ? `⚠️ URGENT: ${childName}'s Vaccine Due Tomorrow!`
+        : `💉 Vaccine Reminder for ${childName}`;
+    const body = `${vaccineList} — Please visit your nearest clinic.`;
+    try {
+        const response = await admin.messaging().send({
+            notification: { title, body },
+            android: { notification: { sound: 'default', priority: 'high', channelId: 'vaccine_reminders' } },
+            data: { childName, vaccineList, isUrgent: String(isUrgent) },
+            token: fcmToken
+        });
+        console.log(`📱  FCM notification sent:`, response);
+        return { sent: true };
+    } catch (err) {
+        console.error('❌  FCM error:', err.message);
+        return { sent: false, error: err.message };
+    }
+}
+
 /* ─────────────────────────── BACKGROUND CRON JOB ─────────────────────────── */
 
 cron.schedule('0 8 * * *', async () => {
@@ -315,6 +354,11 @@ cron.schedule('0 8 * * *', async () => {
                 const ids = vaccines.map(v => v._id);
                 await Vaccination.updateMany({ _id: { $in: ids } }, { reminder_sent: true });
                 console.log(`✉️  [CRON] Sent reminder for ${member.name} (${user.email}) — ${vaccines.length} vaccine(s)`);
+            }
+            // Send FCM push notification if user has token
+            if (user.fcm_token) {
+                await sendFCMNotification({ fcmToken: user.fcm_token, childName: member.name, vaccines, isUrgent });
+                console.log(`📱  [CRON] FCM sent for ${member.name}`);
             }
         }
     } catch (err) { console.error('❌  [CRON] Error in reminder job:', err.message); }
@@ -596,6 +640,19 @@ app.put('/api/vaccination/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+
+/* ─────────────────────────── ROUTES: FCM TOKEN ─────────────────────────── */
+
+app.post('/api/users/fcm-token', async (req, res) => {
+    try {
+        const { user_id, fcm_token } = req.body;
+        if (!user_id || !fcm_token) return res.status(400).json({ error: 'user_id and fcm_token required' });
+        await User.findByIdAndUpdate(user_id, { fcm_token });
+        console.log(`📱  FCM token saved for user: ${user_id}`);
+        res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 /* ─────────────────────────── CONFIG ENDPOINT ─────────────────────────── */
 
