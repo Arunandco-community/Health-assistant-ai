@@ -8,14 +8,24 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 require('dotenv').config();
 const admin = require('firebase-admin');
 if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert({
-            project_id: 'ai-health-assistant-39381',
-            private_key_id: '59fcc56812016af292ef336bb6d19a04d6cca824',
-            private_key: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-            client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-39381.iam.gserviceaccount.com',
-        })
-    });
+    try {
+        const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+        if (privateKey && privateKey.trim()) {
+            admin.initializeApp({
+                credential: admin.credential.cert({
+                    project_id: 'ai-health-assistant-39381',
+                    private_key_id: '59fcc56812016af292ef336bb6d19a04d6cca824',
+                    private_key: privateKey,
+                    client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-39381.iam.gserviceaccount.com',
+                })
+            });
+            console.log('Firebase initialized successfully');
+        } else {
+            console.log('Skipping Firebase initialization - FIREBASE_PRIVATE_KEY not set');
+        }
+    } catch (error) {
+        console.log('Firebase initialization error - running in demo mode:', error.message);
+    }
 }
 
 const express = require('express');
