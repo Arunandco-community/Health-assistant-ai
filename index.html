@@ -7,6 +7,9 @@
     <meta name="description" content="AI-powered health assistant: symptom analysis, vaccine guidance, medical information." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Firebase SDK for FCM push notifications -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
     <style>
         *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
         :root{--bg:#0a1628;--bg2:#0d1f3c;--bgt:#062a2e;--g0:rgba(255,255,255,0.04);--g1:rgba(255,255,255,0.07);--g2:rgba(255,255,255,0.11);--b0:rgba(255,255,255,0.06);--b1:rgba(255,255,255,0.10);--t:#e8edf5;--ts:#8b9ec2;--tm:#4e6388;--ac:#14b8a6;--ab:#3b82f6;--ap:#8b5cf6;--aa:#f59e0b;--ar:#ef4444;--gu:linear-gradient(135deg,#3b82f6,#6366f1);--gs:linear-gradient(135deg,#14b8a6,#3b82f6);--gbg:linear-gradient(145deg,#062a2e 0%,#0a1628 40%,#0d1f3c 100%);--gland:linear-gradient(160deg,#041a1e 0%,#081422 45%,#0d1838 100%);--r1:8px;--r2:12px;--r3:16px;--r4:20px;--rp:50px;--sw:300px}
@@ -66,9 +69,14 @@
         .mtime{font-size:.6rem;color:var(--tm);margin-top:5px;opacity:.7}.mrow.u .mtime{text-align:right;color:rgba(255,255,255,.4)}
         .aav{width:28px;height:28px;background:var(--gs);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;margin-right:8px;flex-shrink:0;margin-top:2px}
         .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:var(--rp);font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}.bd{width:5px;height:5px;border-radius:50%;display:inline-block}
-        .bml{background:rgba(139,92,246,.12);color:#c4b5fd;border:1px solid rgba(139,92,246,.22)}.bml .bd{background:#8b5cf6}.bllm{background:rgba(59,130,246,.12);color:#93c5fd;border:1px solid rgba(59,130,246,.22)}.bllm .bd{background:#3b82f6}.bclf{background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.22)}.bclf .bd{background:#f59e0b}.berr{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.2)}.berr .bd{background:#ef4444}
+        .bml{background:rgba(139,92,246,.12);color:#c4b5fd;border:1px solid rgba(139,92,246,.22)}.bml .bd{background:#8b5cf6}.bllm{background:rgba(59,130,246,.12);color:#93c5fd;border:1px solid rgba(59,130,246,.22)}.bllm .bd{background:#3b82f6}.bclf{background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.22)}.bclf .bd{background:#f59e0b}.berr{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.2)}.berr .bd{background:#ef4444}.bcht{background:rgba(20,184,166,.12);color:#5eead4;border:1px solid rgba(20,184,166,.25)}.bcht .bd{background:#14b8a6}
+        .clarif-box{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.18);border-left:3px solid #f59e0b;border-radius:var(--r2);padding:12px 16px;color:var(--t);font-size:.84rem;line-height:1.7}
+        .clarif-box ol{margin:8px 0 0 18px;padding:0}.clarif-box ol li{margin-bottom:4px;color:var(--ts);font-size:.82rem}
         .mld{font-size:1.05rem;font-weight:700;color:#e2e8f0;margin-bottom:10px}.mlcw{margin-bottom:10px}.mlcl{font-size:.7rem;color:var(--ts);margin-bottom:5px;display:flex;justify-content:space-between}.mlcv{font-weight:700;font-size:.8rem;color:var(--t)}.mltr{height:7px;background:rgba(255,255,255,0.07);border-radius:4px;overflow:hidden}.mlf{height:100%;border-radius:4px;background:linear-gradient(90deg,#8b5cf6,#a78bfa);transition:width 1s ease;width:0%}.mlm{color:var(--ts);font-size:.81rem;line-height:1.6}.mldisc{margin-top:10px;padding:8px 12px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.12);border-radius:var(--r1);font-size:.69rem;color:#fbbf24;line-height:1.45}
         .errbox{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--r2);padding:11px 13px;color:#fca5a5;font-size:.81rem;line-height:1.5;display:flex;align-items:flex-start;gap:8px}
+        .emergbox{background:rgba(239,68,68,.13);border:2px solid rgba(239,68,68,.55);border-left:5px solid #ef4444;border-radius:var(--r2);padding:16px 18px;color:#fca5a5;font-size:.88rem;line-height:1.75;animation:pulse-emerg 1.8s ease infinite}
+        @keyframes pulse-emerg{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.25)}50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
+        .postpred-box{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-left:3px solid #3b82f6;border-radius:var(--r2);padding:12px 16px;color:#93c5fd;font-size:.84rem;line-height:1.65}
         .vchat-panel{margin-top:12px;background:rgba(20,184,166,.05);border:1px solid rgba(20,184,166,.12);border-radius:var(--r2);padding:13px 15px}.vchat-title{font-size:.76rem;font-weight:600;color:#5eead4;margin-bottom:9px;display:flex;align-items:center;gap:5px}.vchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}.vchip{padding:4px 10px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.17);border-radius:var(--rp);font-size:.69rem;color:#99f6e4;font-weight:500}.vcdisc{font-size:.64rem;color:var(--tm);font-style:italic;line-height:1.4}
         .trow{display:flex;justify-content:flex-start;animation:fadeUp .3s ease both}.tbub{background:rgba(255,255,255,0.06);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.08);border-radius:var(--r3);border-bottom-left-radius:4px;padding:13px 18px;display:flex;align-items:center;gap:4px}.td{width:6px;height:6px;background:var(--tm);border-radius:50%;animation:bnc 1.4s infinite ease-in-out}.td:nth-child(2){animation-delay:.16s}.td:nth-child(3){animation-delay:.32s}
         @keyframes bnc{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-5px);opacity:1}}
@@ -281,18 +289,10 @@
         const BACKEND_API = window.location.origin + '/api';
 
         /* ── AI backend URL — reads from /config (set AI_BACKEND_URL env var on Railway) ── */
-        let AI_API = 'http://localhost:8000/predict'; // local default
-        let _aiApiReady = (async () => {
-            try {
-                const cfgRes = await fetch(window.location.origin + '/config');
-                if (cfgRes.ok) {
-                    const cfg = await cfgRes.json();
-                    if (cfg.aiBackendUrl && !cfg.aiBackendUrl.includes('localhost')) {
-                        AI_API = cfg.aiBackendUrl.replace(/\/$/, '') + '/predict';
-                    }
-                }
-            } catch(e) { /* keep default localhost:8000 */ }
-        })();
+        let AI_API = window.location.origin + '/api/ai/predict'; // proxied via Node.js
+        // AI_API now routes through Node.js proxy at /api/ai/predict
+        // No dynamic config fetch needed - proxy handles local and Railway
+        let _aiApiReady = Promise.resolve();
 
         const LS={USER:'aha_user',LANG:'aha_lang',ACTIVE_MEMBER:'aha_active_member'};
         const VAXDB=[
@@ -408,13 +408,117 @@
         async function handleVaxConfirm(uid,isYes){
             if(!lastVaccineQuery)return;
             document.querySelectorAll(`[data-uid="${uid}"]`).forEach(b=>{b.disabled=true;b.style.opacity='.5';});
-            const status=isYes?'Completed':'Due',statusLabel=isYes?'✅ Marked as Completed':'⏳ Kept as Due',statusColor=isYes?'#5eead4':'#fcd34d';
-            try{
-                for(const vac of lastVaccineQuery.vaccines){const recs=memberVaccineRecords[currentMemberId]||[];const rec=recs.find(r=>r.vaccine_name===vac.name);if(rec){await apiCall(`/vaccinations/${rec._id}`,'PUT',{status});rec.status=status;}}
-                const r=document.createElement('div');r.className='mrow a';
-                r.innerHTML=`<div class="aav">🤖</div><div class="mbub"><div style="color:${statusColor};font-weight:700;font-size:.92rem">${statusLabel}</div><div style="color:var(--ts);font-size:.8rem;margin-top:4px">${lastVaccineQuery.vaccines.map(v=>esc(v.name)).join(', ')} — vaccine record updated in your health profile.</div><div class="mtime">${ts()}</div></div>`;
-                msgs.appendChild(r);scroll();if(vaxPanel.classList.contains('open'))renderVaxCards(null);
-            }catch(err){const r=document.createElement('div');r.className='mrow a';r.innerHTML=`<div class="aav">🤖</div><div class="mbub"><div style="color:#fca5a5">⚠️ Could not update record. Please try again.</div><div class="mtime">${ts()}</div></div>`;msgs.appendChild(r);scroll();}
+
+            if(isYes){
+                // ── YES: Mark all vaccines as Completed ───────────────────────────
+                try{
+                    for(const vac of lastVaccineQuery.vaccines){
+                        const recs=memberVaccineRecords[currentMemberId]||[];
+                        const rec=recs.find(r=>r.vaccine_name===vac.name);
+                        if(rec){await apiCall(`/vaccinations/${rec._id}`,'PUT',{status:'Completed'});rec.status='Completed';}
+                    }
+                    const r=document.createElement('div');r.className='mrow a';
+                    r.innerHTML=`<div class="aav">🤖</div><div class="mbub">
+                        <div style="color:#5eead4;font-weight:700;font-size:.92rem">✅ Marked as Completed</div>
+                        <div style="color:var(--ts);font-size:.8rem;margin-top:4px">
+                            ${lastVaccineQuery.vaccines.map(v=>esc(v.name)).join(', ')} — updated in your vaccine tracker. Great job staying on schedule! 💪
+                        </div>
+                        <div class="mtime">${ts()}</div></div>`;
+                    msgs.appendChild(r);scroll();
+                    if(vaxPanel.classList.contains('open'))renderVaxCards(null);
+                }catch(err){
+                    const r=document.createElement('div');r.className='mrow a';
+                    r.innerHTML=`<div class="aav">🤖</div><div class="mbub"><div style="color:#fca5a5">⚠️ Could not update record. Please try again.</div><div class="mtime">${ts()}</div></div>`;
+                    msgs.appendChild(r);scroll();
+                }
+
+            } else {
+                // ── NO: Keep as Due + Send reminder email from chat ───────────────
+                // Show "Sending reminder…" bubble immediately
+                const sendingR=document.createElement('div');sendingR.className='mrow a';
+                sendingR.innerHTML=`<div class="aav">🤖</div><div class="mbub">
+                    <div style="color:#fcd34d;font-weight:700;font-size:.92rem">⏳ Noted — sending you a reminder email…</div>
+                    <div style="color:var(--ts);font-size:.8rem;margin-top:4px">We'll email you the vaccine details with the due date so you don't forget.</div>
+                    <div class="mtime">${ts()}</div></div>`;
+                msgs.appendChild(sendingR);scroll();
+
+                // Update DB status to Due for all vaccines
+                try{
+                    for(const vac of lastVaccineQuery.vaccines){
+                        const recs=memberVaccineRecords[currentMemberId]||[];
+                        const rec=recs.find(r=>r.vaccine_name===vac.name);
+                        if(rec&&rec.status!=='Completed'){
+                            await apiCall(`/vaccinations/${rec._id}`,'PUT',{status:'Due'});
+                            rec.status='Due';
+                        }
+                    }
+                }catch(e){console.error('DB update error:',e);}
+
+                // Build vaccines payload with due_date from DB records
+                const vaccinesPayload=lastVaccineQuery.vaccines.map(vac=>{
+                    const recs=memberVaccineRecords[currentMemberId]||[];
+                    const rec=recs.find(r=>r.vaccine_name===vac.name);
+                    return{
+                        name:vac.name,
+                        prevents:vac.prevents||'',
+                        ageRange:vac.ageRange||'',
+                        due_date:rec?.due_date||null
+                    };
+                });
+
+                // Call new chat-remind endpoint → sends rich email
+                try{
+                    const result=await apiCall('/vaccines/chat-remind','POST',{
+                        member_id:currentMemberId,
+                        user_id:currentUser?._id,
+                        vaccines:vaccinesPayload
+                    });
+
+                    // Replace sending bubble with result bubble
+                    sendingR.remove();
+                    const r=document.createElement('div');r.className='mrow a';
+
+                    if(result.sent){
+                        r.innerHTML=`<div class="aav">🤖</div><div class="mbub">
+                            <div style="color:#5eead4;font-weight:700;font-size:.92rem">✉️ Reminder email sent!</div>
+                            <div style="color:var(--ts);font-size:.82rem;margin-top:6px;line-height:1.6">
+                                We've sent a detailed reminder to your email with:<br>
+                                <span style="color:#e2e8f0">
+                                    💉 <strong>${vaccinesPayload.map(v=>esc(v.name)).join(', ')}</strong><br>
+                                    🦠 Diseases prevented by each vaccine<br>
+                                    📅 Due dates for each vaccination<br>
+                                    ✅ Steps to track completion in the app
+                                </span>
+                            </div>
+                            <div style="margin-top:10px;padding:8px 12px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.2);border-radius:8px;font-size:.76rem;color:#5eead4">
+                                📱 After getting vaccinated, open Vaccine Tracker → Mark as Completed
+                            </div>
+                            <div class="mtime">${ts()}</div></div>`;
+                    } else if(result.skipped){
+                        r.innerHTML=`<div class="aav">🤖</div><div class="mbub">
+                            <div style="color:#fcd34d;font-weight:700;font-size:.92rem">⚠️ Email not configured</div>
+                            <div style="color:var(--ts);font-size:.8rem;margin-top:4px">
+                                Add EMAIL_USER and EMAIL_PASSWORD to your .env file to enable email reminders.<br>
+                                Your vaccines are still tracked: <strong>${vaccinesPayload.map(v=>esc(v.name)).join(', ')}</strong>
+                            </div>
+                            <div class="mtime">${ts()}</div></div>`;
+                    } else {
+                        r.innerHTML=`<div class="aav">🤖</div><div class="mbub">
+                            <div style="color:#fca5a5;font-weight:700;font-size:.92rem">⚠️ Could not send email</div>
+                            <div style="color:var(--ts);font-size:.8rem;margin-top:4px">${esc(result.message||'Please check your email settings.')}</div>
+                            <div class="mtime">${ts()}</div></div>`;
+                    }
+                    msgs.appendChild(r);scroll();
+                    if(vaxPanel.classList.contains('open'))renderVaxCards(null);
+
+                }catch(err){
+                    sendingR.remove();
+                    const r=document.createElement('div');r.className='mrow a';
+                    r.innerHTML=`<div class="aav">🤖</div><div class="mbub"><div style="color:#fca5a5">⚠️ Could not send reminder. Please try from the Vaccine Tracker.</div><div class="mtime">${ts()}</div></div>`;
+                    msgs.appendChild(r);scroll();
+                }
+            }
+
             lastVaccineQuery=null;
         }
         window.handleVaxConfirm=handleVaxConfirm;
@@ -460,7 +564,7 @@
         async function init(){
             spawnParticles();
             const user=getUser(),lang=getLang();
-            if(user&&localStorage.getItem(LS.LANG)){currentUser=user;await loadFamilyMembers();await loadChatHistory();fillProfile(user,lang);show(appScreen);startConv();personalizeWelcome(user);ci.focus();setTimeout(()=>checkVaccines(user._id),1800);}
+            if(user&&localStorage.getItem(LS.LANG)){currentUser=user;await loadFamilyMembers();await loadChatHistory();fillProfile(user,lang);show(appScreen);startConv();personalizeWelcome(user);ci.focus();setTimeout(()=>checkVaccines(user._id),1800);setTimeout(()=>initFCM(user._id),2500);}
             else if(user){show(langScreen)}else{show(loginScreen)}
         }
 
@@ -613,7 +717,7 @@
 
         document.querySelectorAll('.lbtn').forEach(b=>b.addEventListener('click',async()=>{
             localStorage.setItem(LS.LANG,b.dataset.lang);const u=getUser();if(!u)return;
-            currentUser=u;await loadFamilyMembers();await loadChatHistory();fillProfile(u,b.dataset.lang);show(appScreen);startConv();personalizeWelcome(u);ci.focus();setTimeout(()=>checkVaccines(u._id),1800);
+            currentUser=u;await loadFamilyMembers();await loadChatHistory();fillProfile(u,b.dataset.lang);show(appScreen);startConv();personalizeWelcome(u);ci.focus();setTimeout(()=>checkVaccines(u._id),1800);setTimeout(()=>initFCM(u._id),2500);
         }));
 
         function fillProfile(u,lang){$('spname').textContent=u.name||'User';$('spdet').textContent=`${u.age||'—'} yrs · ${u.gender||'—'} · ${u.location||'—'}`;$('splang').textContent='🌐 '+lang;}
@@ -721,17 +825,120 @@
             msgs.appendChild(rem);scroll();
         }
 
-        function badge(mode){const m={ml_prediction:['bml','ML Prediction'],llm_fallback:['bllm','AI Health Guidance'],clarification:['bclf','More Info Needed'],vaccine_tracking:['bllm','AI Health Guidance'],error:['berr','Error']};const b=m[mode]||m['llm_fallback'];return`<div class="badge ${b[0]}"><span class="bd"></span>${b[1]}</div>`;}
+        function badge(mode){const m={ml_prediction:['bml','ML Prediction'],llm_fallback:['bllm','AI Health Guidance'],clarification:['bclf','Clarification'],chitchat:['bcht','Chitchat'],vaccine_tracking:['bllm','AI Health Guidance'],post_prediction:['bllm','Health Guidance'],emergency:['berr','🚨 Emergency'],error:['berr','Error']};const b=m[mode]||m['llm_fallback'];return`<div class="badge ${b[0]}"><span class="bd"></span>${b[1]}</div>`;}
         function vchatPanel(){const chips=VAXDB.slice(0,6).map(v=>`<span class="vchip">${esc(v.name)}</span>`).join('');return`<div class="vchat-panel"><div class="vchat-title">💉 Common Vaccine Recommendations</div><div class="vchips">${chips}</div><div class="vcdisc">For exact schedule, consult a pediatrician. <a href="#" id="openVaxFull" style="color:#5eead4;text-decoration:none">View full tracker →</a></div></div>`;}
 
         function appendUserBubble(text){const r=document.createElement('div');r.className='mrow u';r.innerHTML=`<div class="mbub">${esc(text)}<div class="mtime">${ts()}</div></div>`;msgs.appendChild(r);scroll();}
 
+        // ── Groq Clinical Detail splitter ──────────────────────────────────────
+        // The separator written by Python is exactly: \n\n💡 AI Clinical Detail:\n
+        // In JavaScript UTF-16 the emoji 💡 counts as 2 code units, so:
+        //   '\n\n'.length = 2  +  '💡'.length = 2  +  ' AI Clinical Detail:\n'.length = 21 = 25 total
+        const GROQ_SEP = '\n\n\uD83D\uDCA1 AI Clinical Detail:\n'; // exact 25-char separator
+        function splitGroqDetail(msg){
+            const idx = msg.indexOf(GROQ_SEP);
+            if(idx === -1) return {main: msg, detail: null};
+            return {main: msg.substring(0, idx), detail: msg.substring(idx + GROQ_SEP.length)};
+        }
+        function groqDetailBox(detail){
+            return `<div style="margin-top:10px;background:rgba(20,184,166,.06);border:1px solid rgba(20,184,166,.18);border-left:3px solid #14b8a6;border-radius:var(--r2);padding:13px 16px;color:#a7f3d0;font-size:.82rem;line-height:1.7"><div style="font-size:.67rem;font-weight:700;color:#5eead4;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">💡 AI Clinical Detail</div><div style="white-space:pre-wrap">${esc(detail)}</div></div>`;
+        }
+
         function buildAIBody(resp,userText){
             const mode=resp.mode||'error';let body='';
             switch(mode){
-                case'ml_prediction':{const dis=resp.disease,conf=typeof resp.confidence==='number'?resp.confidence:null,pct=conf!==null?Math.round(conf*100):null,msg=resp.message||'';if(dis)body+=`<div class="mld">🧬 ${esc(dis)}</div>`;if(pct!==null)body+=`<div class="mlcw"><div class="mlcl"><span>Confidence</span><span class="mlcv">${pct}%</span></div><div class="mltr"><div class="mlf" data-w="${pct}"></div></div></div>`;if(msg)body+=`<div class="mlm">${esc(msg)}</div>`;body+=`<div class="mldisc">⚕️ AI-based prediction. Please consult a medical professional for accurate diagnosis.</div>`;break;}
-                case'error':body=`<div class="errbox"><span>⚠️</span><span>${esc(resp.message||'Something went wrong. Please try again.')}</span></div>`;break;
-                default:body=`<div style="line-height:1.7;white-space:pre-wrap">${esc(resp.message||JSON.stringify(resp))}</div>`;
+
+                /* ── CASE 1: Chitchat (e.g. "Hi") ── */
+                case'chitchat':
+                    body=`<div style="line-height:1.75;white-space:pre-wrap">${esc(resp.message||'Hello! I\'m your AI Health Assistant. Describe your symptoms and I\'ll help analyze them.')}</div>`;
+                    break;
+
+                /* ── CASE 2: Clarification (single symptom → 5 questions) ── */
+                case'clarification':{
+                    const raw=resp.message||'';
+                    const lines=raw.split('\n');
+                    let intro='', items=[], notes=[], inList=false;
+                    lines.forEach(l=>{
+                        const m=l.match(/^\s*(\d+)\.\s+(.+)/);
+                        if(m){inList=true;items.push(m[2]);}
+                        else if(!inList){intro+=l+'\n';}
+                        else if(l.trim()){notes.push(l.trim());}
+                    });
+                    let h='';
+                    if(intro.trim()) h+=`<div style="margin-bottom:10px;line-height:1.65;color:var(--t);font-size:.86rem">${esc(intro.trim())}</div>`;
+                    if(items.length){
+                        h+=`<div class="clarif-box"><ol style="margin:0 0 0 16px;padding:0">${items.map(i=>`<li style="margin-bottom:6px;color:var(--ts);font-size:.82rem;line-height:1.5">${esc(i)}</li>`).join('')}</ol></div>`;
+                    } else {
+                        h+=`<div class="clarif-box" style="white-space:pre-wrap;font-size:.84rem">${esc(raw)}</div>`;
+                    }
+                    if(notes.length) h+=`<div style="margin-top:8px;font-size:.72rem;color:var(--tm);font-style:italic">${esc(notes.join(' '))}</div>`;
+                    body=h; break;
+                }
+
+                /* ── CASES 3/4/5: ML Prediction card ── */
+                case'ml_prediction':{
+                    const dis=resp.disease;
+                    const conf=typeof resp.confidence==='number'?resp.confidence:null;
+                    const pct=resp.confidence_pct||(conf!==null?(conf*100).toFixed(2)+'%':null);
+                    const barW=conf!==null?parseFloat((conf*100).toFixed(2)):null;
+                    const barCol=barW>=60?'linear-gradient(90deg,#14b8a6,#10b981)':barW>=30?'linear-gradient(90deg,#8b5cf6,#a78bfa)':'linear-gradient(90deg,#ef4444,#f87171)';
+                    // Disease name
+                    if(dis) body+=`<div class="mld">🧬 ${esc(dis)}</div>`;
+                    // Confidence bar
+                    if(pct!==null) body+=`<div class="mlcw"><div class="mlcl"><span>Confidence</span><span class="mlcv" style="font-size:.95rem;font-weight:800;letter-spacing:-.01em">${pct}</span></div><div class="mltr"><div class="mlf" data-w="${barW}" style="background:${barCol}"></div></div></div>`;
+                    // Alternative disease chips
+                    if(resp.alternatives&&resp.alternatives.length>0){
+                        body+=`<div style="margin:8px 0 10px;display:flex;flex-wrap:wrap;gap:5px">${resp.alternatives.map(a=>`<span style="padding:3px 11px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);border-radius:50px;font-size:.69rem;color:#93c5fd;font-weight:500">${esc(a)}</span>`).join('')}</div>`;
+                    }
+                    // If message has a Groq detail embedded (post-clarification path), show it
+                    const mlMsg=resp.message||'';
+                    const mlSplit=splitGroqDetail(mlMsg);
+                    if(mlSplit.detail){
+                        body+=groqDetailBox(mlSplit.detail);
+                    }
+                    body+=`<div class="mldisc">⚕️ AI-based prediction. Please consult a medical professional for accurate diagnosis.</div>`;
+                    // Action buttons
+                    if(dis){
+                        body+=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+                            <button onclick="window.sendFollowup('is it dangerous?')" style="padding:5px 13px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:50px;color:#fca5a5;font-size:.72rem;font-weight:600;cursor:pointer">⚠️ Is it dangerous?</button>
+                            <button onclick="window.sendFollowup('what is the treatment?')" style="padding:5px 13px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.25);border-radius:50px;color:#5eead4;font-size:.72rem;font-weight:600;cursor:pointer">💊 Treatment</button>
+                            <button onclick="window.sendFollowup('what causes this?')" style="padding:5px 13px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);border-radius:50px;color:#93c5fd;font-size:.72rem;font-weight:600;cursor:pointer">🔬 What causes this?</button>
+                        </div>`;
+                    }
+                    break;
+                }
+
+                /* ── CASES 6/7: Post-prediction (danger/treatment + Groq enrichment) ── */
+                case'post_prediction':{
+                    const pp=splitGroqDetail(resp.message||'');
+                    body=`<div class="postpred-box"><div style="white-space:pre-wrap;line-height:1.7;font-size:.85rem">${esc(pp.main)}</div></div>`;
+                    if(pp.detail) body+=groqDetailBox(pp.detail);
+                    break;
+                }
+
+                /* ── CASE 8: Emergency ── */
+                case'emergency':
+                    body=`<div class="emergbox"><div style="font-size:1rem;font-weight:800;margin-bottom:8px;color:#ef4444;letter-spacing:-.01em">EMERGENCY — SEEK IMMEDIATE CARE</div><div style="margin-bottom:12px;font-size:.85rem;line-height:1.6;color:#fca5a5">Your symptoms may indicate a medical emergency</div><div style="display:flex;flex-direction:column;gap:8px;font-size:.84rem;font-weight:600;color:#fca5a5"><div style="display:flex;align-items:center;gap:9px"><span style="font-size:1rem">📞</span><span>Call <strong style="color:#fff">108 / 112</strong></span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:1rem">🏥</span><span>Go to the nearest Emergency Room now</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:1rem">❌</span><span>Do NOT wait or self-medicate</span></div></div><div style="margin-top:12px;font-size:.7rem;color:rgba(252,165,165,.5);font-style:italic">→ No ML prediction runs. Emergency check is always first.</div></div>`;
+                    break;
+
+                /* ── Error ── */
+                case'error':
+                    body=`<div class="errbox"><span>⚠️</span><span>${esc(resp.message||'Something went wrong. Please try again.')}</span></div>`;
+                    break;
+
+                /* ── Default: llm_fallback, vaccine_tracking, etc. ── */
+                default:{
+                    if(resp.mode==='vaccine_tracking'&&resp.data){
+                        // Show vaccine message text, not raw JSON
+                        const vmsg=(resp.data&&resp.data.message)||JSON.stringify(resp.data,null,2);
+                        body=`<div style="line-height:1.7;white-space:pre-wrap;font-size:.85rem">${esc(vmsg)}</div>`;
+                    } else {
+                        const raw2=resp.message||JSON.stringify(resp);
+                        const s2=splitGroqDetail(raw2);
+                        body=`<div style="line-height:1.7;white-space:pre-wrap;font-size:.85rem">${esc(s2.main)}</div>`;
+                        if(s2.detail) body+=groqDetailBox(s2.detail);
+                    }
+                }
             }
             if(userText&&VCHAT_KEYWORDS.some(k=>userText.toLowerCase().includes(k)))body+=vchatPanel();
             return{mode,body};
@@ -759,7 +966,7 @@
             await _aiApiReady; // ensure AI_API URL is resolved before calling
             const lang=getLang();const prompt=lang!=='English'?`${text}\n\n[Respond in ${lang} language]`:text;
             try{
-                const res=await fetch(AI_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:prompt,message:prompt})});
+                const res=await fetch(AI_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:prompt,message:prompt,session_id:currentConvId||'default'})});
                 removeTyping();
                 if(!res.ok){appendAIBubble({mode:'error',message:`Server error (${res.status}). Please try again.`},text);setWait(false);return}
                 let data;try{data=await res.json()}catch{appendAIBubble({mode:'error',message:'Failed to parse server response.'},text);setWait(false);return}
@@ -768,6 +975,7 @@
             finally{setWait(false);ci.focus()}
         }
 
+        window.sendFollowup=function(q){ci.value=q;handleSend();};
         sb.addEventListener('click',handleSend);
         ci.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();handleSend()}});
 
@@ -808,6 +1016,145 @@
         document.getElementById('vaxLaterBtn').addEventListener('click',()=>{document.getElementById('vaccinePopup').classList.add('hidden');if(currentUser)sessionStorage.setItem('vax_popup_dismissed_'+currentUser._id,'1');});
         document.getElementById('vaxPopupDismiss').addEventListener('click',()=>{document.getElementById('vaccinePopup').classList.add('hidden');if(currentUser)sessionStorage.setItem('vax_popup_dismissed_'+currentUser._id,'1');});
         document.getElementById('vaccinePopup').addEventListener('click',(e)=>{if(e.target===document.getElementById('vaccinePopup')){document.getElementById('vaccinePopup').classList.add('hidden');if(currentUser)sessionStorage.setItem('vax_popup_dismissed_'+currentUser._id,'1');}});
+
+
+        /* ══════════════════════════════════════════════════════════════════
+           FCM PUSH NOTIFICATION SETUP
+           ─────────────────────────────────────────────────────────────────
+           How it works:
+           1. Firebase SDK is loaded in <head>
+           2. On login, we register the Service Worker (firebase-messaging-sw.js)
+           3. We request notification permission from the browser
+           4. Firebase gives us a unique FCM token for this browser/device
+           5. We save that token to our server → stored in User.fcm_token
+           6. Server's cron job uses that token to send push notifications
+           ══════════════════════════════════════════════════════════════════ */
+
+        // ── Firebase project config ──────────────────────────────────────
+        // STEP 1: Replace these with your actual values from:
+        // Firebase Console → Project Settings → General → Your apps → Web app → Config
+        const FIREBASE_CONFIG = {
+            apiKey:            "AIzaSyD-YOUR-API-KEY",            // ← replace
+            authDomain:        "ai-health-assistant-3938-9326b.firebaseapp.com",
+            projectId:         "ai-health-assistant-3938-9326b",
+            storageBucket:     "ai-health-assistant-3938-9326b.appspot.com",
+            messagingSenderId: "YOUR-SENDER-ID",                  // ← replace
+            appId:             "YOUR-APP-ID"                      // ← replace
+        };
+
+        // STEP 2: Your VAPID key (Web Push Certificate)
+        // Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
+        // Click "Generate key pair" if you haven't yet, then copy the Key pair value
+        const FCM_VAPID_KEY = "YOUR-VAPID-KEY-HERE";             // ← replace
+
+        let fcmMessaging = null;
+        let fcmInitialized = false;
+
+        async function initFCM(userId) {
+            // Guard: only run once, only in supported browsers
+            if (fcmInitialized) return;
+            if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+                console.log('FCM: Browser does not support notifications/SW');
+                return;
+            }
+
+            try {
+                // 1. Initialize Firebase app (safe to call multiple times)
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
+                }
+                fcmMessaging = firebase.messaging();
+
+                // 2. Register the Service Worker
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                console.log('FCM: Service Worker registered:', registration.scope);
+
+                // 3. Request notification permission
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    console.log('FCM: Notification permission denied');
+                    return;
+                }
+
+                // 4. Get the FCM token
+                const token = await fcmMessaging.getToken({
+                    vapidKey: FCM_VAPID_KEY,
+                    serviceWorkerRegistration: registration
+                });
+
+                if (!token) {
+                    console.log('FCM: No token received');
+                    return;
+                }
+
+                console.log('FCM: Token obtained:', token.substring(0, 20) + '…');
+
+                // 5. Save token to server
+                await fetch('/api/users/fcm-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, fcm_token: token })
+                });
+
+                fcmInitialized = true;
+                console.log('FCM: Token saved to server ✅');
+
+                // 6. Handle foreground messages (app is open)
+                fcmMessaging.onMessage(function(payload) {
+                    console.log('FCM: Foreground message:', payload);
+                    const { title, body } = payload.notification || {};
+                    const { childName, vaccineList } = payload.data || {};
+
+                    // Show an in-app toast for foreground notifications
+                    showFCMToast(
+                        title || `💉 Vaccine Reminder — ${childName}`,
+                        body  || `${vaccineList} — Please visit your nearest clinic.`
+                    );
+                });
+
+            } catch (err) {
+                console.error('FCM: Initialization error:', err.message);
+            }
+        }
+
+        function showFCMToast(title, message) {
+            // Remove any existing FCM toast
+            const existing = document.getElementById('fcmToast');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.id = 'fcmToast';
+            toast.style.cssText = `
+                position:fixed;top:18px;right:18px;z-index:9999;
+                background:rgba(13,31,60,.97);
+                border:1px solid rgba(20,184,166,.35);
+                border-left:4px solid #14b8a6;
+                border-radius:12px;padding:14px 18px;max-width:320px;
+                box-shadow:0 8px 32px rgba(0,0,0,.45);
+                animation:slideInRight .35s cubic-bezier(.34,1.56,.64,1) both;
+                font-family:inherit;
+            `;
+            toast.innerHTML = `
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                    <span style="font-size:1.3rem;flex-shrink:0">💉</span>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:.82rem;font-weight:700;color:#5eead4;margin-bottom:3px">${title}</div>
+                        <div style="font-size:.77rem;color:#94a3b8;line-height:1.45">${message}</div>
+                    </div>
+                    <button onclick="this.closest('#fcmToast').remove()" style="background:none;border:none;color:#4e6388;font-size:1rem;cursor:pointer;padding:0;flex-shrink:0">✕</button>
+                </div>`;
+
+            // Add slide-in animation
+            if (!document.querySelector('#fcmToastStyle')) {
+                const s = document.createElement('style');
+                s.id = 'fcmToastStyle';
+                s.textContent = '@keyframes slideInRight{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:translateX(0)}}';
+                document.head.appendChild(s);
+            }
+
+            document.body.appendChild(toast);
+            setTimeout(() => { if (toast.parentNode) toast.remove(); }, 6000);
+        }
 
         init();
     })();

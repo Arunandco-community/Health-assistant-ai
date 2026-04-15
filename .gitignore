@@ -1,23 +1,49 @@
-# Node.js
+# Node
 node_modules/
 npm-debug.log*
-
-# Environment - NEVER commit
-.env
+yarn-error.log
 
 # Python
 __pycache__/
+*.py[cod]
 *.pyc
-*.pyo
 .venv/
 venv/
+*.egg-info/
+dist/
+build/
+
+# Environment — NEVER commit secrets
+.env
+.env.local
+.env.production
+
+# Android build artifacts — too large for GitHub
+android/app/build/
+android/.gradle/
+android/build/
+android/capacitor-cordova-android-plugins/build/
+android/app/release/
+*.apk
+*.aab
+*.keystore
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.suo
+*.user
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Windows batch files
-*.bat
-
 # Logs
 *.log
+logs/
+
+# Model files are large — store separately or use Git LFS
+# If models are under 100MB each, remove the next two lines
+src/models_saved/universal_disease_model/classifier.pkl
+src/models_saved/universal_disease_model/label_encoder.pkl

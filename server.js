@@ -13,10 +13,10 @@ if (!admin.apps.length) {
         if (privateKey && privateKey.trim()) {
             admin.initializeApp({
                 credential: admin.credential.cert({
-                    project_id: 'ai-health-assistant-39381',
-                    private_key_id: '59fcc56812016af292ef336bb6d19a04d6cca824',
+                    project_id: 'ai-health-assistant-3938-9326b',
+                    private_key_id: 'c90e40a1c69fa1389e501da32053d9ad883cdd42',
                     private_key: privateKey,
-                    client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-39381.iam.gserviceaccount.com',
+                    client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-3938-9326b.iam.gserviceaccount.com',
                 })
             });
             console.log('Firebase initialized successfully');
@@ -569,13 +569,25 @@ app.post('/api/vaccines/remind', async (req, res) => {
         const isUrgent = vax.due_date && (vax.due_date - now) <= 24 * 3600 * 1000;
         const result = await sendReminderEmail({ toEmail: user.email, childName: member.name, vaccines: [vax], isUrgent });
         if (!result.skipped) await Vaccination.findByIdAndUpdate(vaccine_id, { reminder_sent: true });
+
+        // Also send FCM push notification if user has a registered token
+        let fcmResult = { skipped: true };
+        if (user.fcm_token) {
+            fcmResult = await sendFCMNotification({ fcmToken: user.fcm_token, childName: member.name, vaccines: [vax], isUrgent });
+            console.log(`📱  [REMIND] FCM push for ${member.name}:`, fcmResult.sent ? 'sent' : fcmResult.error || 'skipped');
+        }
+
+        const emailMsg = result.skipped
+            ? 'Email not configured. Please set EMAIL_USER and EMAIL_PASSWORD in .env'
+            : result.sent ? `Reminder email sent to ${user.email}` : `Email failed: ${result.error}`;
+        const pushMsg = (!fcmResult.skipped && fcmResult.sent) ? ' + push notification sent.' : '';
+
         res.json({
             ok: true,
             sent: result.sent || false,
             skipped: result.skipped || false,
-            message: result.skipped
-                ? 'Email not configured. Please set EMAIL_USER and EMAIL_PASSWORD in .env'
-                : result.sent ? `Reminder email sent to ${user.email}` : `Email failed: ${result.error}`,
+            fcm_sent: fcmResult.sent || false,
+            message: emailMsg + pushMsg,
             disclaimer: 'This system does not replace medical professionals.'
         });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -583,6 +595,136 @@ app.post('/api/vaccines/remind', async (req, res) => {
 
 app.get('/api/vaccine-schedule', (req, res) => {
     res.json({ schedule: VACCINE_SCHEDULE, disclaimer: 'This system does not replace medical professionals.' });
+});
+
+/* ─────────────────────────────────────────────────────────────────
+   Chat-triggered vaccine reminder with rich email
+   Called when user taps "⏳ Not yet" in the chatbot vaccine card.
+   Sends a detailed email: vaccine name, disease prevented, due date, next steps.
+   ──────────────────────────────────────────────────────────────── */
+app.post('/api/vaccines/chat-remind', async (req, res) => {
+    try {
+        const { member_id, user_id, vaccines } = req.body;
+        if (!member_id || !user_id || !vaccines?.length)
+            return res.status(400).json({ error: 'member_id, user_id, and vaccines[] are required' });
+
+        const member = await FamilyMember.findById(member_id);
+        if (!member) return res.status(404).json({ error: 'Family member not found' });
+
+        const user = await User.findById(user_id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com') {
+            return res.json({ ok: false, skipped: true, message: '⚠️ Email not configured.' });
+        }
+
+        const toEmail = user.email;
+        const childName = member.name;
+        const fromName = process.env.EMAIL_FROM_NAME || 'AI Health Assistant';
+        const today = new Date();
+
+        function esc_html(str) {
+            return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        const vaccineRows = vaccines.map(v => {
+            const dueDateStr = v.due_date
+                ? new Date(v.due_date).toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+                : (v.ageRange || 'As recommended by doctor');
+            const isOverdue = v.due_date && new Date(v.due_date) < today;
+            const urgencyColor = isOverdue ? '#c53030' : '#1d4ed8';
+            const urgencyLabel = isOverdue ? '⚠️ OVERDUE' : '📅 Upcoming';
+            return `
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:16px 18px;">
+            <div style="font-weight:700;font-size:15px;color:#1a202c;margin-bottom:4px;">💉 ${esc_html(v.name)}</div>
+            <div style="font-size:13px;color:#718096;">Prevents: <strong style="color:#2d3748;">${esc_html(v.prevents||'—')}</strong></div>
+          </td>
+          <td style="padding:16px 18px;vertical-align:top;">
+            <div style="font-size:12px;color:${urgencyColor};font-weight:700;margin-bottom:3px;">${urgencyLabel}</div>
+            <div style="font-size:14px;color:${urgencyColor};font-weight:600;">${esc_html(dueDateStr)}</div>
+          </td>
+        </tr>`;
+        }).join('');
+
+        const overdueCount = vaccines.filter(v => v.due_date && new Date(v.due_date) < today).length;
+        const subject = overdueCount > 0
+            ? `⚠️ Overdue Vaccine Alert — ${childName} needs attention`
+            : `💉 Vaccine Reminder — ${childName}'s upcoming vaccinations`;
+
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f9ff;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f9ff;padding:32px 16px;">
+<tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.10);">
+<tr><td style="background:linear-gradient(135deg,#0f766e,#1d4ed8);padding:36px 40px;text-align:center;">
+  <div style="font-size:48px;margin-bottom:12px;">💉</div>
+  <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Vaccine Reminder</h1>
+  <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">AI Health Assistant · Smart. Safe. Preventive Healthcare.</p>
+</td></tr>
+<tr><td style="padding:32px 40px 0;">
+  <p style="margin:0 0 8px;font-size:16px;color:#2d3748;line-height:1.7;">Hello <strong>${esc_html(user.name||'there')}</strong>,</p>
+  <p style="margin:0 0 24px;font-size:15px;color:#4a5568;line-height:1.7;">
+    Your AI Health Assistant is reminding you about the following vaccine${vaccines.length>1?'s':''} for 
+    <strong style="color:#0f766e;">${esc_html(childName)}</strong>. 
+    Please visit your nearest clinic to get ${vaccines.length>1?'them':'it'} administered.
+  </p>
+</td></tr>
+<tr><td style="padding:0 40px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <thead><tr style="background:#f8faff;">
+      <th style="padding:12px 18px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;">Vaccine</th>
+      <th style="padding:12px 18px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;">Due Date</th>
+    </tr></thead>
+    <tbody>${vaccineRows}</tbody>
+  </table>
+</td></tr>
+<tr><td style="padding:24px 40px 0;">
+  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:10px;padding:18px 22px;">
+    <div style="font-weight:700;font-size:14px;color:#15803d;margin-bottom:10px;">✅ Next Steps</div>
+    <ol style="margin:0;padding-left:20px;color:#166534;font-size:13px;line-height:2.1;">
+      <li>Book an appointment at your nearest clinic or hospital</li>
+      <li>Bring your child's vaccination card / health booklet</li>
+      <li>After vaccination, open the app → Vaccine Tracker → Mark as <strong>Completed</strong></li>
+    </ol>
+  </div>
+</td></tr>
+<tr><td style="padding:18px 40px;">
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;">
+    <p style="margin:0;color:#92400e;font-size:12px;line-height:1.6;">
+      ⚠️ <strong>Disclaimer:</strong> This reminder is from your AI Health Assistant and does not replace 
+      professional medical advice. Consult a qualified healthcare provider for your child's specific needs.
+    </p>
+  </div>
+</td></tr>
+<tr><td style="background:#f8fafc;padding:18px 40px;text-align:center;border-top:1px solid #e2e8f0;">
+  <p style="margin:0;color:#94a3b8;font-size:12px;">AI Health Assistant — Smart. Safe. Preventive Healthcare.</p>
+</td></tr>
+</table></td></tr></table></body></html>`;
+
+        const info = await getTransporter().sendMail({
+            from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+            to: toEmail, subject, html
+        });
+        console.log(`✉️  [CHAT-REMIND] Email sent to ${toEmail}:`, info.messageId);
+
+        // Mark records as reminder_sent in DB
+        const vaccineNames = vaccines.map(v => v.name);
+        await Vaccination.updateMany(
+            { member_id, vaccine_name: { $in: vaccineNames } },
+            { reminder_sent: true, last_updated: new Date() }
+        );
+
+        res.json({
+            ok: true, sent: true,
+            message: `✉️ Reminder sent to ${toEmail} — ${vaccines.length} vaccine${vaccines.length>1?'s':''}.`,
+            email: toEmail, vaccines_count: vaccines.length
+        });
+
+    } catch (err) {
+        console.error('[CHAT-REMIND] Error:', err.message);
+        res.json({ ok: false, sent: false, message: `❌ Email failed: ${err.message}` });
+    }
 });
 
 /* ─────────────────────────── ROUTES: CHAT HISTORY ─────────────────────────── */
@@ -664,6 +806,26 @@ app.post('/api/users/fcm-token', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+/* ─────────────────────────── AI PROXY ─────────────────────────── */
+/* Forwards /api/ai/predict from browser → Python backend on port 8000 */
+/* This fixes the ERR_ADDRESS_INVALID error when browser tries to reach 0.0.0.0:8000 */
+
+app.post('/api/ai/predict', async (req, res) => {
+    const aiUrl = (process.env.AI_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '') + '/predict';
+    try {
+        const response = await fetch(aiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (err) {
+        console.error('❌  AI proxy error:', err.message);
+        res.status(503).json({ mode: 'error', message: 'AI backend is not reachable. Make sure Python server is running on port 8000.' });
+    }
+});
+
 /* ─────────────────────────── CONFIG ENDPOINT ─────────────────────────── */
 
 app.get('/config', (req, res) => {
@@ -686,5 +848,4 @@ app.listen(PORT, () => {
     console.log(`🩺  Open http://localhost:${PORT} in your browser\n`);
 });
 
-/* ─────────────────────────── CONFIG ENDPOINT ─────────────────────────── */
-// Returns AI backend URL so frontend can work both locally and on Railway
+
