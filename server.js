@@ -13,10 +13,10 @@ if (!admin.apps.length) {
         if (privateKey && privateKey.trim()) {
             admin.initializeApp({
                 credential: admin.credential.cert({
-                    project_id: 'ai-health-assistant-39381',
-                    private_key_id: '59fcc56812016af292ef336bb6d19a04d6cca824',
+                    project_id: 'ai-health-assistant-3938-9326b',
+                    private_key_id: 'c90e40a1c69fa1389e501da32053d9ad883cdd42',
                     private_key: privateKey,
-                    client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-39381.iam.gserviceaccount.com',
+                    client_email: 'firebase-adminsdk-fbsvc@ai-health-assistant-3938-9326b.iam.gserviceaccount.com',
                 })
             });
             console.log('Firebase initialized successfully');
@@ -32,8 +32,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-const nodemailer = require('nodemailer'); // kept for local dev fallback
-const https = require('https');
+const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 
 const app = express();
@@ -203,75 +202,27 @@ function buildVaccinesWithDueDates(memberId, birthDate) {
     }));
 }
 
-/* ─────────────────────────── EMAIL MODULE (Resend HTTPS API) ───────────────── */
-/* Railway blocks SMTP ports 465/587. Resend sends over HTTPS port 443 — always  */
-/* works on Railway Hobby plan. Get free API key at resend.com (3000 emails/mo)  */
+/* ─────────────────────────── EMAIL MODULE ─────────────────────────── */
 
-// ── Resend HTTP sender (no SDK needed — plain HTTPS POST) ──────────────────────
-async function sendViaResend({ toEmail, subject, html, fromName }) {
-    const RESEND_KEY = process.env.RESEND_API_KEY;
-    if (!RESEND_KEY) return { skipped: true, reason: 'RESEND_API_KEY not set' };
+let emailTransporter = null;
 
-    const from = process.env.RESEND_FROM_EMAIL || 'AI Health Assistant <onboarding@resend.dev>';
-
-    const payload = JSON.stringify({
-        from,
-        to: [toEmail],
-        subject,
-        html
-    });
-
-    return new Promise((resolve) => {
-        const req = https.request({
-            hostname: 'api.resend.com',
-            path: '/emails',
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${RESEND_KEY}`,
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(payload)
-            }
-        }, (res) => {
-            let body = '';
-            res.on('data', d => body += d);
-            res.on('end', () => {
-                try {
-                    const data = JSON.parse(body);
-                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                        console.log(`✉️  [Resend] Email sent to ${toEmail} — id: ${data.id}`);
-                        resolve({ sent: true, messageId: data.id });
-                    } else {
-                        console.error(`❌  [Resend] Error ${res.statusCode}:`, body);
-                        resolve({ sent: false, error: data.message || body });
-                    }
-                } catch (e) {
-                    resolve({ sent: false, error: e.message });
-                }
-            });
-        });
-        req.on('error', (e) => {
-            console.error('❌  [Resend] Request error:', e.message);
-            resolve({ sent: false, error: e.message });
-        });
-        req.write(payload);
-        req.end();
-    });
-}
-
-// ── Local SMTP fallback (only works on localhost, not Railway) ──────────────────
 function getTransporter() {
-    return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: false,
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD }
-    });
+    if (!emailTransporter) {
+        emailTransporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.EMAIL_PORT || '587'),
+            secure: false,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
+    }
+    return emailTransporter;
 }
 
 async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = false }) {
-    // Use Resend in production (Railway), SMTP locally
-    const useResend = !!process.env.RESEND_API_KEY;
-    if (!useResend && (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com')) {
+    if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com') {
         console.log('⚠️  Email not configured – skipping email for:', toEmail);
         return { skipped: true };
     }
@@ -338,15 +289,12 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
   </table>
 </body></html>`;
 
-    // Send via Resend (Railway) or SMTP (local)
-    if (useResend) {
-        return sendViaResend({ toEmail, subject, html, fromName });
-    }
-
     try {
         const info = await getTransporter().sendMail({
             from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-            to: toEmail, subject, html
+            to: toEmail,
+            subject,
+            html
         });
         console.log(`✉️  Email sent to ${toEmail}:`, info.messageId);
         return { sent: true, messageId: info.messageId };
@@ -621,13 +569,25 @@ app.post('/api/vaccines/remind', async (req, res) => {
         const isUrgent = vax.due_date && (vax.due_date - now) <= 24 * 3600 * 1000;
         const result = await sendReminderEmail({ toEmail: user.email, childName: member.name, vaccines: [vax], isUrgent });
         if (!result.skipped) await Vaccination.findByIdAndUpdate(vaccine_id, { reminder_sent: true });
+
+        // Also send FCM push notification if user has a registered token
+        let fcmResult = { skipped: true };
+        if (user.fcm_token) {
+            fcmResult = await sendFCMNotification({ fcmToken: user.fcm_token, childName: member.name, vaccines: [vax], isUrgent });
+            console.log(`📱  [REMIND] FCM push for ${member.name}:`, fcmResult.sent ? 'sent' : fcmResult.error || 'skipped');
+        }
+
+        const emailMsg = result.skipped
+            ? 'Email not configured. Please set EMAIL_USER and EMAIL_PASSWORD in .env'
+            : result.sent ? `Reminder email sent to ${user.email}` : `Email failed: ${result.error}`;
+        const pushMsg = (!fcmResult.skipped && fcmResult.sent) ? ' + push notification sent.' : '';
+
         res.json({
             ok: true,
             sent: result.sent || false,
             skipped: result.skipped || false,
-            message: result.skipped
-                ? 'Email not configured. Add RESEND_API_KEY in Railway Variables (resend.com — free)'
-                : result.sent ? `Reminder email sent to ${user.email}` : `Email failed: ${result.error}`,
+            fcm_sent: fcmResult.sent || false,
+            message: emailMsg + pushMsg,
             disclaimer: 'This system does not replace medical professionals.'
         });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -654,9 +614,8 @@ app.post('/api/vaccines/chat-remind', async (req, res) => {
         const user = await User.findById(user_id);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        const useResend = !!process.env.RESEND_API_KEY;
-        if (!useResend && (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com')) {
-            return res.json({ ok: false, skipped: true, message: '⚠️ Email not configured. Add RESEND_API_KEY to Railway variables.' });
+        if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com') {
+            return res.json({ ok: false, skipped: true, message: '⚠️ Email not configured.' });
         }
 
         const toEmail = user.email;
@@ -743,25 +702,11 @@ app.post('/api/vaccines/chat-remind', async (req, res) => {
 </td></tr>
 </table></td></tr></table></body></html>`;
 
-        // Use Resend (Railway) or SMTP (local)
-        let emailResult;
-        if (useResend) {
-            emailResult = await sendViaResend({ toEmail, subject, html, fromName });
-        } else {
-            try {
-                const info = await getTransporter().sendMail({
-                    from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-                    to: toEmail, subject, html
-                });
-                emailResult = { sent: true, messageId: info.messageId };
-            } catch (e) {
-                emailResult = { sent: false, error: e.message };
-            }
-        }
-        if (!emailResult.sent) {
-            return res.json({ ok: false, sent: false, message: `❌ Email failed: ${emailResult.error || 'unknown error'}` });
-        }
-        console.log(`✉️  [CHAT-REMIND] Email sent to ${toEmail}:`, emailResult.messageId);
+        const info = await getTransporter().sendMail({
+            from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+            to: toEmail, subject, html
+        });
+        console.log(`✉️  [CHAT-REMIND] Email sent to ${toEmail}:`, info.messageId);
 
         // Mark records as reminder_sent in DB
         const vaccineNames = vaccines.map(v => v.name);
@@ -899,10 +844,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`\n🚀  AI Health Assistant server running at http://localhost:${PORT}`);
     console.log(`📊  MongoDB: ${process.env.MONGO_URI ? 'Connected' : 'NOT SET'}`);
-    const emailMode = process.env.RESEND_API_KEY
-        ? `Resend API (${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'})`
-        : (process.env.EMAIL_USER ? `SMTP ${process.env.EMAIL_USER} (local only)` : 'NOT CONFIGURED — add RESEND_API_KEY');
-    console.log(`✉️   Email: ${emailMode}`);
+    console.log(`✉️   Email: ${process.env.EMAIL_USER || 'NOT CONFIGURED'}`);
     console.log(`🩺  Open http://localhost:${PORT} in your browser\n`);
 });
 
