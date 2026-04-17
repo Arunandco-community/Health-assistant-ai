@@ -208,24 +208,33 @@ let emailTransporter = null;
 
 function getTransporter() {
     if (!emailTransporter) {
-        // Railway blocks port 587 — use 465 (SSL) as default
-        const port = parseInt(process.env.EMAIL_PORT || '465');
+        // Railway blocks port 587 (STARTTLS). Use port 465 (SSL) ONLY.
+        // Gmail setup: use App Password (not your real password)
+        // Get App Password: Google Account → Security → 2-Step Verification → App passwords
         emailTransporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-            port: port,
-            secure: port === 465,
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,          // true = SSL on port 465
             auth: {
                 user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASSWORD
+                pass: process.env.EMAIL_PASSWORD  // must be Gmail App Password
             },
-            connectionTimeout: 15000,
-            greetingTimeout: 10000,
-            socketTimeout: 20000,
-            tls: { rejectUnauthorized: false }
+            connectionTimeout: 20000,
+            greetingTimeout: 15000,
+            socketTimeout: 25000,
+            tls: {
+                rejectUnauthorized: false,
+                minVersion: 'TLSv1.2'
+            }
         });
         emailTransporter.verify((err) => {
-            if (err) console.error('❌  Email verify failed:', err.message);
-            else console.log('✅  Email transporter ready on port', port);
+            if (err) {
+                console.error('❌  Email verify failed:', err.message);
+                console.error('    Fix: Set EMAIL_USER and EMAIL_PASSWORD (Gmail App Password) in Railway Variables');
+                emailTransporter = null;  // reset so next call retries
+            } else {
+                console.log('✅  Email transporter ready (Gmail SSL port 465)');
+            }
         });
     }
     return emailTransporter;
@@ -310,6 +319,7 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
         return { sent: true, messageId: info.messageId };
     } catch (err) {
         console.error('❌  Email send error:', err.message);
+        emailTransporter = null;  // reset on error so next call retries fresh
         return { sent: false, error: err.message };
     }
 }
