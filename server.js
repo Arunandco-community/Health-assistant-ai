@@ -208,14 +208,24 @@ let emailTransporter = null;
 
 function getTransporter() {
     if (!emailTransporter) {
+        // Railway blocks port 587 — use 465 (SSL) as default
+        const port = parseInt(process.env.EMAIL_PORT || '465');
         emailTransporter = nodemailer.createTransport({
             host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-            port: parseInt(process.env.EMAIL_PORT || '587'),
-            secure: false,
+            port: port,
+            secure: port === 465,
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASSWORD
-            }
+            },
+            connectionTimeout: 15000,
+            greetingTimeout: 10000,
+            socketTimeout: 20000,
+            tls: { rejectUnauthorized: false }
+        });
+        emailTransporter.verify((err) => {
+            if (err) console.error('❌  Email verify failed:', err.message);
+            else console.log('✅  Email transporter ready on port', port);
         });
     }
     return emailTransporter;
@@ -850,6 +860,14 @@ app.get('/config', (req, res) => {
 });
 
 /* ─────────────────────────── SERVE FRONTEND ─────────────────────────── */
+
+/* Serve firebase-messaging-sw.js with correct Service-Worker headers */
+app.get('/firebase-messaging-sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js'));
+});
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
