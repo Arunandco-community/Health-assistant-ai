@@ -479,8 +479,9 @@
                     const r=document.createElement('div');r.className='mrow a';
 
                     if(result.sent){
+                        const pushBadge=result.fcm_sent?'<div style="margin-top:8px;padding:6px 10px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);border-radius:8px;font-size:.76rem;color:#93c5fd">📱 Push notification also sent to your phone!</div>':'';
                         r.innerHTML=`<div class="aav">🤖</div><div class="mbub">
-                            <div style="color:#5eead4;font-weight:700;font-size:.92rem">✉️ Reminder email sent!</div>
+                            <div style="color:#5eead4;font-weight:700;font-size:.92rem">✉️ Reminder sent!</div>
                             <div style="color:var(--ts);font-size:.82rem;margin-top:6px;line-height:1.6">
                                 We've sent a detailed reminder to your email with:<br>
                                 <span style="color:#e2e8f0">
@@ -490,6 +491,7 @@
                                     ✅ Steps to track completion in the app
                                 </span>
                             </div>
+                            ${pushBadge}
                             <div style="margin-top:10px;padding:8px 12px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.2);border-radius:8px;font-size:.76rem;color:#5eead4">
                                 📱 After getting vaccinated, open Vaccine Tracker → Mark as Completed
                             </div>
@@ -775,8 +777,10 @@
             try{
                 const result=await apiCall('/vaccines/remind','POST',{vaccine_id:vaccineId,user_id:currentUser._id});
                 btnEl.innerHTML='✓ Sent';btnEl.classList.add('sent');
-                const toast=$('remindToast');toast.textContent=result.skipped?'⚠️ Email not configured — set EMAIL_USER in .env':(result.sent?'✉️ Reminder email sent successfully!':'⚠️ '+(result.message||'Could not send'));
-                toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),3500);
+                const toast=$('remindToast');
+                const pushTxt=result.fcm_sent?' + 📱 push sent':'';
+                toast.textContent=result.skipped?'⚠️ Email not configured — set EMAIL_USER in .env':(result.sent?`✉️ Email sent${pushTxt}!`:'⚠️ '+(result.message||'Could not send'));
+                toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),4000);
             }catch(err){btnEl.innerHTML=orig;btnEl.disabled=false;}
         }
         window.requestReminder=requestReminder;
