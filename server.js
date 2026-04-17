@@ -708,20 +708,6 @@ app.post('/api/vaccines/chat-remind', async (req, res) => {
         });
         console.log(`✉️  [CHAT-REMIND] Email sent to ${toEmail}:`, info.messageId);
 
-        // Send FCM push notification if user has token
-        let fcmResult = { skipped: true };
-        if (user.fcm_token) {
-            const isOverdue = vaccines.some(v => v.due_date && new Date(v.due_date) < today);
-            const fcmVaccines = vaccines.map(v => ({ vaccine_name: v.name, due_date: v.due_date }));
-            fcmResult = await sendFCMNotification({
-                fcmToken: user.fcm_token,
-                childName: member.name,
-                vaccines: fcmVaccines,
-                isUrgent: isOverdue
-            });
-            console.log(`📱  [CHAT-REMIND] FCM push for ${member.name}:`, fcmResult.sent ? 'sent ✅' : (fcmResult.error || 'skipped'));
-        }
-
         // Mark records as reminder_sent in DB
         const vaccineNames = vaccines.map(v => v.name);
         await Vaccination.updateMany(
@@ -729,11 +715,10 @@ app.post('/api/vaccines/chat-remind', async (req, res) => {
             { reminder_sent: true, last_updated: new Date() }
         );
 
-        const pushMsg = (!fcmResult.skipped && fcmResult.sent) ? ' + 📱 push notification sent.' : '';
         res.json({
             ok: true, sent: true,
-            message: `✉️ Reminder sent to ${toEmail} — ${vaccines.length} vaccine${vaccines.length>1?'s':''}.${pushMsg}`,
-            email: toEmail, vaccines_count: vaccines.length, fcm_sent: fcmResult.sent || false
+            message: `✉️ Reminder sent to ${toEmail} — ${vaccines.length} vaccine${vaccines.length>1?'s':''}.`,
+            email: toEmail, vaccines_count: vaccines.length
         });
 
     } catch (err) {
