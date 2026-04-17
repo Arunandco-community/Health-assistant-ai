@@ -1,12 +1,16 @@
-/* ============================================================
-   firebase-messaging-sw.js
-   Place this file at your PROJECT ROOT (same folder as index.html)
-   This Service Worker handles FCM background push notifications.
-   ============================================================ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   firebase-messaging-sw.js  — AI Health Assistant
+   Place this file at PROJECT ROOT (same level as server.js and index.html).
+   Railway serves it at: https://your-app.railway.app/firebase-messaging-sw.js
+
+   This Service Worker handles push notifications when the app is CLOSED or
+   in the background. Firebase requires this file to be named exactly this.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
+/* ── Same Firebase config as index.html ──────────────────────────────────── */
 firebase.initializeApp({
     apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",
     authDomain:        "ai-health-assistant-3938-9326b.firebaseapp.com",
@@ -18,46 +22,48 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-/* ── Background message handler ──────────────────────────────
-   Fires when the app is in the background or closed.
-   ──────────────────────────────────────────────────────────── */
+/* ── Background message handler ─────────────────────────────────────────── */
 messaging.onBackgroundMessage(function(payload) {
-    console.log('[SW] Background message received:', payload);
+    console.log('[SW] Background FCM message received:', payload);
 
-    const { title, body } = payload.notification || {};
-    const { childName, vaccineList, isUrgent } = payload.data || {};
+    const notificationTitle = payload.notification?.title || '💉 Vaccine Reminder';
+    const notificationBody  = payload.notification?.body  || 'You have a pending vaccine.';
 
-    const notifTitle = title || (isUrgent === 'true'
-        ? `⚠️ URGENT: ${childName}'s Vaccine Due Tomorrow!`
-        : `💉 Vaccine Reminder — ${childName}`);
-
-    const notifBody = body || `${vaccineList} — Please visit your nearest clinic.`;
-
-    return self.registration.showNotification(notifTitle, {
-        body:     notifBody,
-        icon:     '/icons/icon-192x192.png',
-        badge:    '/icons/badge-72x72.png',
-        tag:      'vaccine-reminder',
+    const notificationOptions = {
+        body:  notificationBody,
+        icon:  '/icon.png',      /* optional: add icon.png to project root */
+        badge: '/badge.png',     /* optional: small monochrome badge icon */
+        tag:   'vaccine-reminder',
         renotify: true,
-        data:     payload.data || {},
-        actions:  [
-            { action: 'open',    title: '📱 Open App' },
-            { action: 'dismiss', title: '✕ Dismiss'   }
-        ],
-        vibrate: [200, 100, 200]
-    });
+        requireInteraction: true,  /* keeps notification visible until dismissed */
+        data: payload.data || {},
+        actions: [
+            { action: 'open',   title: '📋 Open App' },
+            { action: 'close',  title: '✕ Dismiss'  }
+        ]
+    };
+
+    self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-/* ── Notification click → open / focus the app ─────────────── */
+/* ── Notification click handler ─────────────────────────────────────────── */
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
-    if (event.action === 'dismiss') return;
+
+    if (event.action === 'close') return;
+
+    /* Open or focus the app when user taps the notification */
     event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(wins) {
-            for (const w of wins) {
-                if (w.url.includes(self.location.origin) && 'focus' in w) return w.focus();
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            for (const client of clientList) {
+                if (client.url && 'focus' in client) {
+                    return client.focus();
+                }
             }
-            if (clients.openWindow) return clients.openWindow('/');
+            /* No open window — open a new one */
+            if (clients.openWindow) {
+                return clients.openWindow('/');
+            }
         })
     );
 });
