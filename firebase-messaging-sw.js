@@ -4,20 +4,16 @@
    This Service Worker handles FCM background push notifications.
    ============================================================ */
 
-// ── Firebase SDK versions (must match what index.html loads) ──
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
-// ── Your Firebase project config ──────────────────────────────
-// IMPORTANT: Replace these values with your actual Firebase config
-// Get from: Firebase Console → Project Settings → General → Your apps → Config
 firebase.initializeApp({
-    apiKey:            "AIzaSyD-YOUR-API-KEY",
+    apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",
     authDomain:        "ai-health-assistant-3938-9326b.firebaseapp.com",
     projectId:         "ai-health-assistant-3938-9326b",
-    storageBucket:     "ai-health-assistant-3938-9326b.appspot.com",
-    messagingSenderId: "YOUR-SENDER-ID",
-    appId:             "YOUR-APP-ID"
+    storageBucket:     "ai-health-assistant-3938-9326b.firebasestorage.app",
+    messagingSenderId: "16856935869",
+    appId:             "1:16856935869:web:cfc82b9ce6fc50a7f136d4"
 });
 
 const messaging = firebase.messaging();
