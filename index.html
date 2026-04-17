@@ -1034,18 +1034,18 @@
         // STEP 1: Replace these with your actual values from:
         // Firebase Console → Project Settings → General → Your apps → Web app → Config
         const FIREBASE_CONFIG = {
-            apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",            // ← replace
+            apiKey:            "AIzaSyD-YOUR-API-KEY",            // ← replace
             authDomain:        "ai-health-assistant-3938-9326b.firebaseapp.com",
             projectId:         "ai-health-assistant-3938-9326b",
-            storageBucket:     "ai-health-assistant-3938-9326b.firebasestorage.app",
-            messagingSenderId: "16856935869",                  // ← replace
-            appId:             "1:16856935869:web:cfc82b9ce6fc50a7f136d4"                      // ← replace
+            storageBucket:     "ai-health-assistant-3938-9326b.appspot.com",
+            messagingSenderId: "YOUR-SENDER-ID",                  // ← replace
+            appId:             "YOUR-APP-ID"                      // ← replace
         };
 
         // STEP 2: Your VAPID key (Web Push Certificate)
         // Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
         // Click "Generate key pair" if you haven't yet, then copy the Key pair value
-        const FCM_VAPID_KEY = "BELFeRoJlujWfldOMs_slzeIKGg8h0iRuqMqnDjpvvf61x33INDBO7KKujtxDJk4JfeidgGrS9bXE2EFBEDjciw";             // ← replace
+        const FCM_VAPID_KEY = "YOUR-VAPID-KEY-HERE";             // ← replace
 
         let fcmMessaging = null;
         let fcmInitialized = false;
