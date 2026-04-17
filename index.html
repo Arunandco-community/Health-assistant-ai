@@ -1034,22 +1034,18 @@
            6. Server's cron job uses that token to send push notifications
            ══════════════════════════════════════════════════════════════════ */
 
-        // ── Firebase project config ──────────────────────────────────────
-        // STEP 1: Replace these with your actual values from:
-        // Firebase Console → Project Settings → General → Your apps → Web app → Config
+        // ── Firebase project config (already configured) ────────────────
         const FIREBASE_CONFIG = {
-            apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",            // ← replace
+            apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",
             authDomain:        "ai-health-assistant-3938-9326b.firebaseapp.com",
             projectId:         "ai-health-assistant-3938-9326b",
             storageBucket:     "ai-health-assistant-3938-9326b.firebasestorage.app",
-            messagingSenderId: "16856935869",                  // ← replace
-            appId:             "1:16856935869:web:cfc82b9ce6fc50a7f136d4"                      // ← replace
+            messagingSenderId: "16856935869",      
+            appId:             "1:16856935869:web:cfc82b9ce6fc50a7f136d4"          
         };
 
-        // STEP 2: Your VAPID key (Web Push Certificate)
-        // Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
-        // Click "Generate key pair" if you haven't yet, then copy the Key pair value
-        const FCM_VAPID_KEY = "BELFeRoJlujWfldOMs_slzeIKGg8h0iRuqMqnDjpvvf61x33INDBO7KKujtxDJk4JfeidgGrS9bXE2EFBEDjciw";             // ← replace
+        // VAPID key (Web Push Certificate — already configured)
+        const FCM_VAPID_KEY = "BELFeRoJlujWfldOMs_slzeIKGg8h0iRuqMqnDjpvvf61x33INDBO7KKujtxDJk4JfeidgGrS9bXE2EFBEDjciw"; 
 
         let fcmMessaging = null;
         let fcmInitialized = false;
