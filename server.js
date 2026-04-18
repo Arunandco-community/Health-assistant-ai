@@ -208,35 +208,15 @@ let emailTransporter = null;
 
 function getTransporter() {
     if (!emailTransporter) {
-        const emailUser = process.env.EMAIL_USER || '';
-        const emailPass = process.env.EMAIL_PASSWORD || '';
-
-        // Debug: log config on startup (password hidden)
-        console.log(`📧  Email config: user=${emailUser}, pass=${emailPass ? emailPass.length + ' chars' : 'NOT SET'}, host=smtp.gmail.com, port=587 STARTTLS`);
-
-        if (!emailUser || !emailPass) {
-            console.error('❌  EMAIL_USER or EMAIL_PASSWORD not set in Railway Variables');
-            return null;
-        }
-
         emailTransporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587,
+            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.EMAIL_PORT || '587'),
             secure: false,
-            requireTLS: true,
             auth: {
-                user: emailUser,
-                pass: emailPass
-            },
-            connectionTimeout: 30000,
-            greetingTimeout: 20000,
-            socketTimeout: 30000,
-            tls: {
-                rejectUnauthorized: false,
-                ciphers: 'SSLv3'
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASSWORD
             }
         });
-        console.log('✅  Email transporter created (Gmail STARTTLS port 587)');
     }
     return emailTransporter;
 }
@@ -309,12 +289,8 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
   </table>
 </body></html>`;
 
-    const transporter = getTransporter();
-    if (!transporter) {
-        return { sent: false, error: 'Email not configured — check EMAIL_USER and EMAIL_PASSWORD in Railway Variables' };
-    }
     try {
-        const info = await transporter.sendMail({
+        const info = await getTransporter().sendMail({
             from: `"${fromName}" <${process.env.EMAIL_USER}>`,
             to: toEmail,
             subject,
@@ -324,7 +300,6 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
         return { sent: true, messageId: info.messageId };
     } catch (err) {
         console.error('❌  Email send error:', err.message);
-        emailTransporter = null;  // reset on error so next call retries fresh
         return { sent: false, error: err.message };
     }
 }
@@ -333,9 +308,8 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
 /* ─────────────────────────── FCM PUSH NOTIFICATION ─────────────────────────── */
 
 async function sendFCMNotification({ fcmToken, childName, vaccines, isUrgent = false }) {
-    if (!fcmToken) { console.log('📱  FCM skipped: no token'); return { skipped: true }; }
-    if (!admin.apps.length) { console.log('📱  FCM skipped: Firebase not initialized'); return { skipped: true }; }
-    const vaccineList = vaccines.map(v => v.vaccine_name || v.name || '').filter(Boolean).join(', ');
+    if (!fcmToken) return { skipped: true };
+    const vaccineList = vaccines.map(v => v.vaccine_name).join(', ');
     const title = isUrgent
         ? `⚠️ URGENT: ${childName}'s Vaccine Due Tomorrow!`
         : `💉 Vaccine Reminder for ${childName}`;
@@ -343,36 +317,14 @@ async function sendFCMNotification({ fcmToken, childName, vaccines, isUrgent = f
     try {
         const response = await admin.messaging().send({
             notification: { title, body },
-            android: {
-                priority: 'high',
-                notification: { sound: 'default', channelId: 'vaccine_reminders', priority: 'max', defaultSound: true }
-            },
-            webpush: {
-                notification: {
-                    title, body,
-                    icon: '/icon.png',
-                    badge: '/badge.png',
-                    requireInteraction: true,
-                    tag: 'vaccine-reminder',
-                    renotify: true
-                },
-                fcmOptions: { link: '/' }
-            },
-            data: {
-                childName: String(childName || ''),
-                vaccineList: String(vaccineList || ''),
-                isUrgent: String(isUrgent)
-            },
+            android: { notification: { sound: 'default', priority: 'high', channelId: 'vaccine_reminders' } },
+            data: { childName, vaccineList, isUrgent: String(isUrgent) },
             token: fcmToken
         });
-        console.log(`📱  FCM notification sent successfully:`, response);
+        console.log(`📱  FCM notification sent:`, response);
         return { sent: true };
     } catch (err) {
         console.error('❌  FCM error:', err.message);
-        if (err.code === 'messaging/registration-token-not-registered' ||
-            err.code === 'messaging/invalid-registration-token') {
-            console.log('📱  FCM token expired — clearing token is recommended');
-        }
         return { sent: false, error: err.message };
     }
 }
@@ -898,14 +850,6 @@ app.get('/config', (req, res) => {
 });
 
 /* ─────────────────────────── SERVE FRONTEND ─────────────────────────── */
-
-/* Serve firebase-messaging-sw.js with correct Service-Worker headers */
-app.get('/firebase-messaging-sw.js', (req, res) => {
-    res.setHeader('Content-Type', 'application/javascript');
-    res.setHeader('Service-Worker-Allowed', '/');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js'));
-});
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
