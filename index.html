@@ -479,8 +479,9 @@
                     const r=document.createElement('div');r.className='mrow a';
 
                     if(result.sent){
+                        const pushBadge=result.fcm_sent?'<div style="margin-top:8px;padding:6px 10px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);border-radius:8px;font-size:.76rem;color:#93c5fd">📱 Push notification also sent to your phone!</div>':'';
                         r.innerHTML=`<div class="aav">🤖</div><div class="mbub">
-                            <div style="color:#5eead4;font-weight:700;font-size:.92rem">✉️ Reminder email sent!</div>
+                            <div style="color:#5eead4;font-weight:700;font-size:.92rem">✉️ Reminder sent!</div>
                             <div style="color:var(--ts);font-size:.82rem;margin-top:6px;line-height:1.6">
                                 We've sent a detailed reminder to your email with:<br>
                                 <span style="color:#e2e8f0">
@@ -490,6 +491,7 @@
                                     ✅ Steps to track completion in the app
                                 </span>
                             </div>
+                            ${pushBadge}
                             <div style="margin-top:10px;padding:8px 12px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.2);border-radius:8px;font-size:.76rem;color:#5eead4">
                                 📱 After getting vaccinated, open Vaccine Tracker → Mark as Completed
                             </div>
@@ -775,8 +777,10 @@
             try{
                 const result=await apiCall('/vaccines/remind','POST',{vaccine_id:vaccineId,user_id:currentUser._id});
                 btnEl.innerHTML='✓ Sent';btnEl.classList.add('sent');
-                const toast=$('remindToast');toast.textContent=result.skipped?'⚠️ Email not configured — set EMAIL_USER in .env':(result.sent?'✉️ Reminder email sent successfully!':'⚠️ '+(result.message||'Could not send'));
-                toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),3500);
+                const toast=$('remindToast');
+                const pushTxt=result.fcm_sent?' + 📱 push sent':'';
+                toast.textContent=result.skipped?'⚠️ Email not configured — set EMAIL_USER in .env':(result.sent?`✉️ Email sent${pushTxt}!`:'⚠️ '+(result.message||'Could not send'));
+                toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),4000);
             }catch(err){btnEl.innerHTML=orig;btnEl.disabled=false;}
         }
         window.requestReminder=requestReminder;
@@ -1030,22 +1034,18 @@
            6. Server's cron job uses that token to send push notifications
            ══════════════════════════════════════════════════════════════════ */
 
-        // ── Firebase project config ──────────────────────────────────────
-        // STEP 1: Replace these with your actual values from:
-        // Firebase Console → Project Settings → General → Your apps → Web app → Config
+        // ── Firebase project config (already configured) ────────────────
         const FIREBASE_CONFIG = {
-            apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",            // ← replace
+            apiKey:            "AIzaSyAe6sNvLbaypl5WHDNWZDgar4_5mH8CG_8",
             authDomain:        "ai-health-assistant-3938-9326b.firebaseapp.com",
             projectId:         "ai-health-assistant-3938-9326b",
             storageBucket:     "ai-health-assistant-3938-9326b.firebasestorage.app",
-            messagingSenderId: "16856935869",                  // ← replace
-            appId:             "1:16856935869:web:cfc82b9ce6fc50a7f136d4"                      // ← replace
+            messagingSenderId: "16856935869",      
+            appId:             "1:16856935869:web:cfc82b9ce6fc50a7f136d4"          
         };
 
-        // STEP 2: Your VAPID key (Web Push Certificate)
-        // Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
-        // Click "Generate key pair" if you haven't yet, then copy the Key pair value
-        const FCM_VAPID_KEY = "BELFeRoJlujWfldOMs_slzeIKGg8h0iRuqMqnDjpvvf61x33INDBO7KKujtxDJk4JfeidgGrS9bXE2EFBEDjciw";             // ← replace
+        // VAPID key (Web Push Certificate — already configured)
+        const FCM_VAPID_KEY = "BELFeRoJlujWfldOMs_slzeIKGg8h0iRuqMqnDjpvvf61x33INDBO7KKujtxDJk4JfeidgGrS9bXE2EFBEDjciw"; 
 
         let fcmMessaging = null;
         let fcmInitialized = false;
