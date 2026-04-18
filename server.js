@@ -34,6 +34,7 @@ const cors = require('cors');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
+const https = require('https');
 
 const app = express();
 app.use(cors());
@@ -203,14 +204,65 @@ function buildVaccinesWithDueDates(memberId, birthDate) {
 }
 
 /* ─────────────────────────── EMAIL MODULE ─────────────────────────── */
+/*
+ * SMART EMAIL SWITCHER
+ * ─────────────────────────────────────────────────────────────────────
+ * Railway / cloud  → uses RESEND HTTP API  (port 443, never blocked)
+ * Local dev        → uses nodemailer SMTP  (port 587, works on home Wi-Fi)
+ *
+ * Railway already has RESEND_API_KEY set in Variables tab — no changes
+ * needed there. Just deploy and it auto-picks the right method.
+ * ─────────────────────────────────────────────────────────────────────
+ */
 
+/* ── Resend HTTP API helper (no npm package needed — pure Node https) ── */
+async function sendViaResend({ toEmail, subject, html, fromName }) {
+    const apiKey  = process.env.RESEND_API_KEY;
+    /* Use verified domain address if set, else Resend's shared test sender */
+    const fromAddr = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const payload  = JSON.stringify({
+        from:    `${fromName} <${fromAddr}>`,
+        to:      [toEmail],
+        subject,
+        html
+    });
+    return new Promise((resolve, reject) => {
+        const req = https.request(
+            {
+                hostname: 'api.resend.com',
+                path:     '/emails',
+                method:   'POST',
+                headers:  {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type':  'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
+                }
+            },
+            (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        resolve({ sent: true, messageId: JSON.parse(data).id });
+                    } else {
+                        reject(new Error(`Resend ${res.statusCode}: ${data}`));
+                    }
+                });
+            }
+        );
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+/* ── nodemailer SMTP helper (local dev fallback) ── */
 let emailTransporter = null;
-
 function getTransporter() {
     if (!emailTransporter) {
         emailTransporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-            port: parseInt(process.env.EMAIL_PORT || '587'),
+            host:   process.env.EMAIL_HOST || 'smtp.gmail.com',
+            port:   parseInt(process.env.EMAIL_PORT || '587'),
             secure: false,
             auth: {
                 user: process.env.EMAIL_USER,
@@ -222,13 +274,16 @@ function getTransporter() {
 }
 
 async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = false }) {
-    if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com') {
-        console.log('⚠️  Email not configured – skipping email for:', toEmail);
+    /* Skip entirely only if BOTH methods are unconfigured */
+    const hasResend = !!process.env.RESEND_API_KEY;
+    const hasSmtp   = process.env.EMAIL_USER && process.env.EMAIL_USER !== 'your_email@gmail.com';
+    if (!hasResend && !hasSmtp) {
+        console.log('⚠️  Email not configured – skipping for:', toEmail);
         return { skipped: true };
     }
 
     const fromName = process.env.EMAIL_FROM_NAME || 'AI Health Assistant';
-    const subject = isUrgent
+    const subject  = isUrgent
         ? `⚠️ URGENT: Child Vaccine Due Tomorrow — ${childName}`
         : `💉 Child Vaccine Reminder — ${childName}`;
 
@@ -290,14 +345,22 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
 </body></html>`;
 
     try {
-        const info = await getTransporter().sendMail({
-            from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-            to: toEmail,
-            subject,
-            html
-        });
-        console.log(`✉️  Email sent to ${toEmail}:`, info.messageId);
-        return { sent: true, messageId: info.messageId };
+        if (hasResend) {
+            /* ── CLOUD PATH: Resend API over HTTPS (Railway-safe) ── */
+            const info = await sendViaResend({ toEmail, subject, html, fromName });
+            console.log(`✉️  [Resend] Email sent to ${toEmail}:`, info.messageId);
+            return { sent: true, messageId: info.messageId };
+        } else {
+            /* ── LOCAL PATH: nodemailer Gmail SMTP ── */
+            const info = await getTransporter().sendMail({
+                from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+                to:   toEmail,
+                subject,
+                html
+            });
+            console.log(`✉️  [SMTP] Email sent to ${toEmail}:`, info.messageId);
+            return { sent: true, messageId: info.messageId };
+        }
     } catch (err) {
         console.error('❌  Email send error:', err.message);
         return { sent: false, error: err.message };
