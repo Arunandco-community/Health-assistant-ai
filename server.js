@@ -208,30 +208,44 @@ let emailTransporter = null;
 
 function getTransporter() {
     if (!emailTransporter) {
-        // Railway blocks port 587 (STARTTLS). Use port 465 (SSL) ONLY.
-        // Gmail setup: use App Password (not your real password)
-        // Get App Password: Google Account → Security → 2-Step Verification → App passwords
+        const emailUser = process.env.EMAIL_USER || '';
+        const emailPass = process.env.EMAIL_PASSWORD || '';
+
+        // Debug: log config on startup (password hidden)
+        console.log(`📧  Email config: user=${emailUser}, pass=${emailPass ? emailPass.length + ' chars' : 'NOT SET'}, host=smtp.gmail.com, port=465`);
+
+        if (!emailUser || !emailPass) {
+            console.error('❌  EMAIL_USER or EMAIL_PASSWORD not set in Railway Variables');
+            return null;
+        }
+
         emailTransporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
             port: 465,
-            secure: true,          // true = SSL on port 465
+            secure: true,
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASSWORD  // must be Gmail App Password
+                user: emailUser,
+                pass: emailPass
             },
-            connectionTimeout: 20000,
-            greetingTimeout: 15000,
-            socketTimeout: 25000,
+            connectionTimeout: 30000,
+            greetingTimeout: 20000,
+            socketTimeout: 30000,
             tls: {
                 rejectUnauthorized: false,
                 minVersion: 'TLSv1.2'
             }
         });
+
         emailTransporter.verify((err) => {
             if (err) {
                 console.error('❌  Email verify failed:', err.message);
-                console.error('    Fix: Set EMAIL_USER and EMAIL_PASSWORD (Gmail App Password) in Railway Variables');
-                emailTransporter = null;  // reset so next call retries
+                if (err.message.includes('535') || err.message.includes('Username and Password')) {
+                    console.error('    CAUSE: Wrong Gmail password. You MUST use a Gmail App Password (16 chars), NOT your regular password.');
+                    console.error('    FIX:   Go to myaccount.google.com → Security → 2-Step Verification → App passwords → Generate');
+                } else if (err.message.includes('timeout') || err.message.includes('ECONNREFUSED')) {
+                    console.error('    CAUSE: Network/firewall issue. Railway port 465 should be open.');
+                }
+                emailTransporter = null;
             } else {
                 console.log('✅  Email transporter ready (Gmail SSL port 465)');
             }
@@ -308,8 +322,12 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
   </table>
 </body></html>`;
 
+    const transporter = getTransporter();
+    if (!transporter) {
+        return { sent: false, error: 'Email not configured — check EMAIL_USER and EMAIL_PASSWORD in Railway Variables' };
+    }
     try {
-        const info = await getTransporter().sendMail({
+        const info = await transporter.sendMail({
             from: `"${fromName}" <${process.env.EMAIL_USER}>`,
             to: toEmail,
             subject,
