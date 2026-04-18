@@ -236,16 +236,13 @@ function getTransporter() {
             }
         });
 
+        // Verify in background — do NOT reset emailTransporter here (race condition)
         emailTransporter.verify((err) => {
             if (err) {
-                console.error('❌  Email verify failed:', err.message);
+                console.error('❌  Email verify warning:', err.message);
                 if (err.message.includes('535') || err.message.includes('Username and Password')) {
-                    console.error('    CAUSE: Wrong Gmail password. You MUST use a Gmail App Password (16 chars), NOT your regular password.');
-                    console.error('    FIX:   Go to myaccount.google.com → Security → 2-Step Verification → App passwords → Generate');
-                } else if (err.message.includes('timeout') || err.message.includes('ECONNREFUSED')) {
-                    console.error('    CAUSE: Network/firewall issue. Railway port 465 should be open.');
+                    console.error('    CAUSE: Wrong Gmail password. Use Gmail App Password (16 chars).');
                 }
-                emailTransporter = null;
             } else {
                 console.log('✅  Email transporter ready (Gmail SSL port 465)');
             }
@@ -346,8 +343,9 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
 /* ─────────────────────────── FCM PUSH NOTIFICATION ─────────────────────────── */
 
 async function sendFCMNotification({ fcmToken, childName, vaccines, isUrgent = false }) {
-    if (!fcmToken) return { skipped: true };
-    const vaccineList = vaccines.map(v => v.vaccine_name).join(', ');
+    if (!fcmToken) { console.log('📱  FCM skipped: no token'); return { skipped: true }; }
+    if (!admin.apps.length) { console.log('📱  FCM skipped: Firebase not initialized'); return { skipped: true }; }
+    const vaccineList = vaccines.map(v => v.vaccine_name || v.name || '').filter(Boolean).join(', ');
     const title = isUrgent
         ? `⚠️ URGENT: ${childName}'s Vaccine Due Tomorrow!`
         : `💉 Vaccine Reminder for ${childName}`;
@@ -355,14 +353,36 @@ async function sendFCMNotification({ fcmToken, childName, vaccines, isUrgent = f
     try {
         const response = await admin.messaging().send({
             notification: { title, body },
-            android: { notification: { sound: 'default', priority: 'high', channelId: 'vaccine_reminders' } },
-            data: { childName, vaccineList, isUrgent: String(isUrgent) },
+            android: {
+                priority: 'high',
+                notification: { sound: 'default', channelId: 'vaccine_reminders', priority: 'max', defaultSound: true }
+            },
+            webpush: {
+                notification: {
+                    title, body,
+                    icon: '/icon.png',
+                    badge: '/badge.png',
+                    requireInteraction: true,
+                    tag: 'vaccine-reminder',
+                    renotify: true
+                },
+                fcmOptions: { link: '/' }
+            },
+            data: {
+                childName: String(childName || ''),
+                vaccineList: String(vaccineList || ''),
+                isUrgent: String(isUrgent)
+            },
             token: fcmToken
         });
-        console.log(`📱  FCM notification sent:`, response);
+        console.log(`📱  FCM notification sent successfully:`, response);
         return { sent: true };
     } catch (err) {
         console.error('❌  FCM error:', err.message);
+        if (err.code === 'messaging/registration-token-not-registered' ||
+            err.code === 'messaging/invalid-registration-token') {
+            console.log('📱  FCM token expired — clearing token is recommended');
+        }
         return { sent: false, error: err.message };
     }
 }
