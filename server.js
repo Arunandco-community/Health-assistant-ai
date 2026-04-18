@@ -202,129 +202,110 @@ function buildVaccinesWithDueDates(memberId, birthDate) {
     }));
 }
 
-/* ── EMAIL MODULE — Resend HTTPS API ──────────────────────────────────────────── */
-/* Railway blocks outbound SMTP (port 587/465). Resend uses HTTPS port 443.       */
-/* Sign up free at resend.com → API Keys. Add RESEND_API_KEY to Railway Variables */
+/* ─────────────────────────── EMAIL MODULE ─────────────────────────── */
 
-const https = require('https');
-
-async function sendViaResend({ toEmail, subject, html }) {
-    const key = process.env.RESEND_API_KEY;
-    if (!key) return { skipped: true, reason: 'RESEND_API_KEY not set' };
-
-    const from = process.env.RESEND_FROM_EMAIL || 'AI Health Assistant <onboarding@resend.dev>';
-    const payload = JSON.stringify({ from, to: [toEmail], subject, html });
-
-    return new Promise((resolve) => {
-        const req = https.request({
-            hostname: 'api.resend.com',
-            path: '/emails',
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${key}`,
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(payload)
-            }
-        }, (res) => {
-            let body = '';
-            res.on('data', d => body += d);
-            res.on('end', () => {
-                try {
-                    const data = JSON.parse(body);
-                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                        console.log(`✉️  [Resend] Sent to ${toEmail} id: ${data.id}`);
-                        resolve({ sent: true, messageId: data.id });
-                    } else {
-                        console.error(`❌  [Resend] ${res.statusCode}:`, data.message || body);
-                        resolve({ sent: false, error: data.message || body });
-                    }
-                } catch (e) { resolve({ sent: false, error: e.message }); }
-            });
-        });
-        req.on('error', e => { console.error('❌  [Resend]', e.message); resolve({ sent: false, error: e.message }); });
-        req.write(payload);
-        req.end();
-    });
-}
-
-/* SMTP fallback — only for local dev, Railway always uses Resend above */
 let emailTransporter = null;
+
 function getTransporter() {
     if (!emailTransporter) {
+        const emailUser = process.env.EMAIL_USER || '';
+        const emailPass = process.env.EMAIL_PASSWORD || '';
+
+        // Debug: log config on startup (password hidden)
+        console.log(`📧  Email config: user=${emailUser}, pass=${emailPass ? emailPass.length + ' chars' : 'NOT SET'}, host=smtp.gmail.com, port=465`);
+
+        if (!emailUser || !emailPass) {
+            console.error('❌  EMAIL_USER or EMAIL_PASSWORD not set in Railway Variables');
+            return null;
+        }
+
         emailTransporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-            port: parseInt(process.env.EMAIL_PORT || '587'),
-            secure: false,
-            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD }
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,
+            auth: {
+                user: emailUser,
+                pass: emailPass
+            },
+            connectionTimeout: 30000,
+            greetingTimeout: 20000,
+            socketTimeout: 30000,
+            tls: {
+                rejectUnauthorized: false,
+                minVersion: 'TLSv1.2'
+            }
+        });
+
+        emailTransporter.verify((err) => {
+            if (err) {
+                console.error('❌  Email verify failed:', err.message);
+                if (err.message.includes('535') || err.message.includes('Username and Password')) {
+                    console.error('    CAUSE: Wrong Gmail password. You MUST use a Gmail App Password (16 chars), NOT your regular password.');
+                    console.error('    FIX:   Go to myaccount.google.com → Security → 2-Step Verification → App passwords → Generate');
+                } else if (err.message.includes('timeout') || err.message.includes('ECONNREFUSED')) {
+                    console.error('    CAUSE: Network/firewall issue. Railway port 465 should be open.');
+                }
+                emailTransporter = null;
+            } else {
+                console.log('✅  Email transporter ready (Gmail SSL port 465)');
+            }
         });
     }
     return emailTransporter;
 }
 
-async function sendEmail({ toEmail, subject, html }) {
-    // Prefer Resend (works on Railway). Fall back to SMTP only locally.
-    if (process.env.RESEND_API_KEY) return sendViaResend({ toEmail, subject, html });
-    if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com')
-        return { skipped: true };
-    try {
-        const info = await getTransporter().sendMail({
-            from: `"AI Health Assistant" <${process.env.EMAIL_USER}>`,
-            to: toEmail, subject, html
-        });
-        console.log(`✉️  [SMTP] Sent to ${toEmail}:`, info.messageId);
-        return { sent: true, messageId: info.messageId };
-    } catch (err) {
-        console.error('❌  [SMTP] Error:', err.message);
-        return { sent: false, error: err.message };
-    }
-}
-
 async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = false }) {
-    if (!process.env.RESEND_API_KEY && (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com')) {
-        console.log('⚠️  Email not configured – skipping for:', toEmail);
+    if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com') {
+        console.log('⚠️  Email not configured – skipping email for:', toEmail);
         return { skipped: true };
     }
 
     const fromName = process.env.EMAIL_FROM_NAME || 'AI Health Assistant';
     const subject = isUrgent
-        ? `⚠️ URGENT: Vaccine Due Tomorrow — ${childName}`
-        : `💉 Vaccine Reminder — ${childName}`;
+        ? `⚠️ URGENT: Child Vaccine Due Tomorrow — ${childName}`
+        : `💉 Child Vaccine Reminder — ${childName}`;
 
     const vaccineRows = vaccines.map(v => {
         const dueStr = v.due_date
             ? new Date(v.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-            : v.recommended_age || 'As recommended';
-        return `<tr>
+            : v.recommended_age;
+        return `
+        <tr>
           <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#1a202c;">${v.vaccine_name}</td>
           <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#4a5568;">${v.disease_prevented || '—'}</td>
           <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:${isUrgent ? '#c53030' : '#2b6cb0'};font-weight:600;">${dueStr}</td>
         </tr>`;
     }).join('');
 
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+    const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f7fafc;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7fafc;padding:32px 16px;">
     <tr><td align="center">
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
         <tr><td style="background:linear-gradient(135deg,#14b8a6,#3b82f6);padding:32px 36px;text-align:center;">
           <div style="font-size:36px;margin-bottom:10px;">💉</div>
-          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Vaccine Reminder</h1>
+          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Child Vaccine Reminder</h1>
           <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">AI Health Assistant</p>
         </td></tr>
         <tr><td style="padding:32px 36px;">
           <p style="color:#4a5568;font-size:15px;line-height:1.7;margin:0 0 20px;">
             Hello,<br><br>
-            This is a ${isUrgent ? '<strong>urgent</strong>' : ''} reminder that <strong>${childName}</strong>
-            is due for the following vaccine${vaccines.length > 1 ? 's' : ''}:
+            This is a ${isUrgent ? '<strong>urgent</strong>' : ''} reminder that <strong>${childName}</strong> is due for the following vaccine${vaccines.length > 1 ? 's' : ''}:
           </p>
           <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
             <thead><tr style="background:#f0fdf4;">
-              <th style="padding:10px 14px;text-align:left;font-size:12px;color:#718096;">Vaccine</th>
-              <th style="padding:10px 14px;text-align:left;font-size:12px;color:#718096;">Prevents</th>
-              <th style="padding:10px 14px;text-align:left;font-size:12px;color:#718096;">Due Date</th>
+              <th style="padding:10px 14px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#718096;">Vaccine</th>
+              <th style="padding:10px 14px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#718096;">Prevents</th>
+              <th style="padding:10px 14px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#718096;">Due Date</th>
             </tr></thead>
             <tbody>${vaccineRows}</tbody>
           </table>
+          <div style="text-align:center;margin:28px 0 20px;">
+            <div style="display:inline-block;background:linear-gradient(135deg,#14b8a6,#3b82f6);border-radius:8px;padding:13px 28px;">
+              <span style="color:#ffffff;font-size:14px;font-weight:600;">Please consult your healthcare provider promptly</span>
+            </div>
+          </div>
           <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:14px 18px;margin-top:20px;">
             <p style="margin:0;color:#92400e;font-size:12px;line-height:1.6;">
               ⚠️ <strong>Disclaimer:</strong> This system does not replace medical professionals.
@@ -334,13 +315,31 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
         </td></tr>
         <tr><td style="background:#f7fafc;padding:20px 36px;text-align:center;border-top:1px solid #e2e8f0;">
           <p style="margin:0;color:#a0aec0;font-size:12px;">AI Health Assistant — Smart. Safe. Preventive Healthcare.</p>
+          <p style="margin:4px 0 0;color:#a0aec0;font-size:11px;">You received this because you registered for vaccine tracking.</p>
         </td></tr>
       </table>
     </td></tr>
   </table>
 </body></html>`;
 
-    return sendEmail({ toEmail, subject, html });
+    const transporter = getTransporter();
+    if (!transporter) {
+        return { sent: false, error: 'Email not configured — check EMAIL_USER and EMAIL_PASSWORD in Railway Variables' };
+    }
+    try {
+        const info = await transporter.sendMail({
+            from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+            to: toEmail,
+            subject,
+            html
+        });
+        console.log(`✉️  Email sent to ${toEmail}:`, info.messageId);
+        return { sent: true, messageId: info.messageId };
+    } catch (err) {
+        console.error('❌  Email send error:', err.message);
+        emailTransporter = null;  // reset on error so next call retries fresh
+        return { sent: false, error: err.message };
+    }
 }
 
 
@@ -617,7 +616,7 @@ app.post('/api/vaccines/remind', async (req, res) => {
         }
 
         const emailMsg = result.skipped
-            ? 'Email not configured. Add RESEND_API_KEY to Railway Variables (free at resend.com)'
+            ? 'Email not configured. Please set EMAIL_USER and EMAIL_PASSWORD in .env'
             : result.sent ? `Reminder email sent to ${user.email}` : `Email failed: ${result.error}`;
         const pushMsg = (!fcmResult.skipped && fcmResult.sent) ? ' + push notification sent.' : '';
 
@@ -653,8 +652,8 @@ app.post('/api/vaccines/chat-remind', async (req, res) => {
         const user = await User.findById(user_id);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        if (!process.env.RESEND_API_KEY && (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com')) {
-            return res.json({ ok: false, skipped: true, message: '⚠️ Email not configured. Add RESEND_API_KEY to Railway Variables (free at resend.com).' });
+        if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your_email@gmail.com') {
+            return res.json({ ok: false, skipped: true, message: '⚠️ Email not configured.' });
         }
 
         const toEmail = user.email;
@@ -741,12 +740,11 @@ app.post('/api/vaccines/chat-remind', async (req, res) => {
 </td></tr>
 </table></td></tr></table></body></html>`;
 
-        const emailResult = await sendEmail({ toEmail, subject, html });
-        if (!emailResult.sent && !emailResult.skipped) {
-            console.error('[CHAT-REMIND] Email failed:', emailResult.error);
-            return res.json({ ok: false, sent: false, message: `❌ Email failed: ${emailResult.error}` });
-        }
-        console.log(`✉️  [CHAT-REMIND] Email sent to ${toEmail}:`, emailResult.messageId || 'ok');
+        const info = await getTransporter().sendMail({
+            from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+            to: toEmail, subject, html
+        });
+        console.log(`✉️  [CHAT-REMIND] Email sent to ${toEmail}:`, info.messageId);
 
         // Send FCM push notification if user has token
         let fcmResult = { skipped: true };
@@ -891,6 +889,14 @@ app.get('/config', (req, res) => {
 
 /* ─────────────────────────── SERVE FRONTEND ─────────────────────────── */
 
+/* Serve firebase-messaging-sw.js with correct Service-Worker headers */
+app.get('/firebase-messaging-sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js'));
+});
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 /* ─────────────────────────── START ─────────────────────────── */
@@ -899,13 +905,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`\n🚀  AI Health Assistant server running at http://localhost:${PORT}`);
     console.log(`📊  MongoDB: ${process.env.MONGO_URI ? 'Connected' : 'NOT SET'}`);
-    const emailProvider = process.env.RESEND_API_KEY
-        ? `✅ Resend HTTPS (${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'})`
-        : process.env.EMAIL_USER
-            ? `⚠️  SMTP ${process.env.EMAIL_USER} — may timeout on Railway`
-            : '❌ NOT CONFIGURED — add RESEND_API_KEY in Railway Variables';
-    console.log(`✉️   Email: ${emailProvider}`);
-    console.log(`📱  FCM: ${process.env.FIREBASE_PRIVATE_KEY ? '✅ Firebase ready' : '⚠️  FIREBASE_PRIVATE_KEY not set'}`);
+    console.log(`✉️   Email: ${process.env.EMAIL_USER || 'NOT CONFIGURED'}`);
     console.log(`🩺  Open http://localhost:${PORT} in your browser\n`);
 });
 
