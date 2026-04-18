@@ -212,7 +212,7 @@ function getTransporter() {
         const emailPass = process.env.EMAIL_PASSWORD || '';
 
         // Debug: log config on startup (password hidden)
-        console.log(`📧  Email config: user=${emailUser}, pass=${emailPass ? emailPass.length + ' chars' : 'NOT SET'}, host=smtp.gmail.com, port=465`);
+        console.log(`📧  Email config: user=${emailUser}, pass=${emailPass ? emailPass.length + ' chars' : 'NOT SET'}, host=smtp.gmail.com, port=587 STARTTLS`);
 
         if (!emailUser || !emailPass) {
             console.error('❌  EMAIL_USER or EMAIL_PASSWORD not set in Railway Variables');
@@ -221,8 +221,9 @@ function getTransporter() {
 
         emailTransporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
-            port: 465,
-            secure: true,
+            port: 587,
+            secure: false,
+            requireTLS: true,
             auth: {
                 user: emailUser,
                 pass: emailPass
@@ -232,21 +233,10 @@ function getTransporter() {
             socketTimeout: 30000,
             tls: {
                 rejectUnauthorized: false,
-                minVersion: 'TLSv1.2'
+                ciphers: 'SSLv3'
             }
         });
-
-        // Verify in background — do NOT reset emailTransporter here (race condition)
-        emailTransporter.verify((err) => {
-            if (err) {
-                console.error('❌  Email verify warning:', err.message);
-                if (err.message.includes('535') || err.message.includes('Username and Password')) {
-                    console.error('    CAUSE: Wrong Gmail password. Use Gmail App Password (16 chars).');
-                }
-            } else {
-                console.log('✅  Email transporter ready (Gmail SSL port 465)');
-            }
-        });
+        console.log('✅  Email transporter created (Gmail STARTTLS port 587)');
     }
     return emailTransporter;
 }
