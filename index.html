@@ -1109,11 +1109,25 @@
                     const { title, body } = payload.notification || {};
                     const { childName, vaccineList } = payload.data || {};
 
-                    // Show an in-app toast for foreground notifications
-                    showFCMToast(
-                        title || `💉 Vaccine Reminder — ${childName}`,
-                        body  || `${vaccineList} — Please visit your nearest clinic.`
-                    );
+                    const notifTitle = title || `💉 Vaccine Reminder — ${childName}`;
+                    const notifBody  = body  || `${vaccineList} — Please visit your nearest clinic.`;
+
+                    // Show in-app toast (always)
+                    showFCMToast(notifTitle, notifBody);
+
+                    // Also show real Windows system popup even when tab is open
+                    if (Notification.permission === 'granted') {
+                        navigator.serviceWorker.ready.then(function(reg) {
+                            reg.showNotification(notifTitle, {
+                                body:     notifBody,
+                                icon:     '/icons/icon-192x192.png',
+                                tag:      'vaccine-reminder-fg',
+                                renotify: true,
+                                vibrate:  [200, 100, 200],
+                                data:     payload.data || {}
+                            });
+                        });
+                    }
                 });
 
             } catch (err) {
