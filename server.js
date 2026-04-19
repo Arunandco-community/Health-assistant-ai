@@ -256,14 +256,19 @@ async function sendViaResend({ toEmail, subject, html, fromName }) {
     });
 }
 
-/* ── nodemailer SMTP helper (local dev fallback) ── */
+/* ── nodemailer SMTP helper ──
+   Local dev  → port 587, secure: false  (default, nothing extra needed in .env)
+   Railway    → port 465, secure: true   (set EMAIL_PORT=465 EMAIL_SECURE=true)
+*/
 let emailTransporter = null;
 function getTransporter() {
     if (!emailTransporter) {
+        const port   = parseInt(process.env.EMAIL_PORT || '587');
+        const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
         emailTransporter = nodemailer.createTransport({
             host:   process.env.EMAIL_HOST || 'smtp.gmail.com',
-            port:   parseInt(process.env.EMAIL_PORT || '587'),
-            secure: false,
+            port,
+            secure,
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASSWORD
@@ -346,12 +351,26 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
 
     try {
         if (hasResend) {
-            /* ── CLOUD PATH: Resend API over HTTPS (Railway-safe) ── */
-            const info = await sendViaResend({ toEmail, subject, html, fromName });
-            console.log(`✉️  [Resend] Email sent to ${toEmail}:`, info.messageId);
-            return { sent: true, messageId: info.messageId };
+            /* ── CLOUD PATH: Try Resend first, fall back to SMTP if Resend
+               returns 403 (free tier only allows sending to verified email) ── */
+            try {
+                const info = await sendViaResend({ toEmail, subject, html, fromName });
+                console.log(`✉️  [Resend] Email sent to ${toEmail}:`, info.messageId);
+                return { sent: true, messageId: info.messageId };
+            } catch (resendErr) {
+                console.warn(`⚠️  Resend failed (${resendErr.message}) — trying SMTP fallback`);
+                if (!hasSmtp) throw resendErr; // no SMTP configured either
+                const info = await getTransporter().sendMail({
+                    from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+                    to:   toEmail,
+                    subject,
+                    html
+                });
+                console.log(`✉️  [SMTP fallback] Email sent to ${toEmail}:`, info.messageId);
+                return { sent: true, messageId: info.messageId };
+            }
         } else {
-            /* ── LOCAL PATH: nodemailer Gmail SMTP ── */
+            /* ── LOCAL PATH: nodemailer Gmail SMTP only ── */
             const info = await getTransporter().sendMail({
                 from: `"${fromName}" <${process.env.EMAIL_USER}>`,
                 to:   toEmail,
