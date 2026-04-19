@@ -1055,12 +1055,13 @@
         let fcmInitialized = false;
 
         async function initFCM(userId) {
-            // Guard: only run once, only in supported browsers
-            if (fcmInitialized) return;
+            // Only skip if browser doesn't support notifications at all
             if (!('Notification' in window) || !('serviceWorker' in navigator)) {
                 console.log('FCM: Browser does not support notifications/SW');
                 return;
             }
+            // NOTE: removed fcmInitialized guard so every device/browser
+            // always registers its own fresh token on login
 
             try {
                 // 1. Initialize Firebase app (safe to call multiple times)
@@ -1080,7 +1081,7 @@
                     return;
                 }
 
-                // 4. Get the FCM token
+                // 4. Get the FCM token for THIS specific device/browser
                 const token = await fcmMessaging.getToken({
                     vapidKey: FCM_VAPID_KEY,
                     serviceWorkerRegistration: registration
@@ -1091,9 +1092,9 @@
                     return;
                 }
 
-                console.log('FCM: Token obtained:', token.substring(0, 20) + '…');
+                console.log('FCM: Token obtained:', token.substring(0, 30) + '…');
 
-                // 5. Save token to server
+                // 5. Always save — overwrites old token with this device's token
                 await fetch('/api/users/fcm-token', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
