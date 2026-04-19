@@ -205,20 +205,56 @@ function buildVaccinesWithDueDates(memberId, birthDate) {
 
 /* ─────────────────────────── EMAIL MODULE ─────────────────────────── */
 /*
- * SMART EMAIL SWITCHER
- * ─────────────────────────────────────────────────────────────────────
- * Railway / cloud  → uses RESEND HTTP API  (port 443, never blocked)
- * Local dev        → uses nodemailer SMTP  (port 587, works on home Wi-Fi)
+ * SMART EMAIL SWITCHER — priority order:
  *
- * Railway already has RESEND_API_KEY set in Variables tab — no changes
- * needed there. Just deploy and it auto-picks the right method.
- * ─────────────────────────────────────────────────────────────────────
+ *  1. BREVO HTTP API  (BREVO_API_KEY set)     → Railway cloud, any recipient ✅
+ *  2. RESEND HTTP API (RESEND_API_KEY set)     → Railway cloud, verified email only
+ *  3. nodemailer SMTP (EMAIL_USER set)         → Local dev only (port 587)
+ *
+ * Railway blocks ALL SMTP ports (587, 465, 25).
+ * HTTP APIs (port 443) always work on Railway.
  */
 
-/* ── Resend HTTP API helper (no npm package needed — pure Node https) ── */
+/* ── 1. Brevo HTTP API (sends to ANY email, free 300/day, no domain needed) ── */
+async function sendViaBrevo({ toEmail, subject, html, fromName }) {
+    const apiKey   = process.env.BREVO_API_KEY;
+    const fromAddr = process.env.EMAIL_USER || 'gopinathsiva28@gmail.com';
+    const payload  = JSON.stringify({
+        sender:      { name: fromName, email: fromAddr },
+        to:          [{ email: toEmail }],
+        subject,
+        htmlContent: html
+    });
+    return new Promise((resolve, reject) => {
+        const req = https.request({
+            hostname: 'api.brevo.com',
+            path:     '/v3/smtp/email',
+            method:   'POST',
+            headers: {
+                'api-key':        apiKey,
+                'Content-Type':   'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            }
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    resolve({ sent: true, messageId: JSON.parse(data).messageId || 'brevo-ok' });
+                } else {
+                    reject(new Error(`Brevo ${res.statusCode}: ${data}`));
+                }
+            });
+        });
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+/* ── 2. Resend HTTP API (fallback — only verified recipient on free plan) ── */
 async function sendViaResend({ toEmail, subject, html, fromName }) {
-    const apiKey  = process.env.RESEND_API_KEY;
-    /* Use verified domain address if set, else Resend's shared test sender */
+    const apiKey   = process.env.RESEND_API_KEY;
     const fromAddr = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
     const payload  = JSON.stringify({
         from:    `${fromName} <${fromAddr}>`,
@@ -227,63 +263,55 @@ async function sendViaResend({ toEmail, subject, html, fromName }) {
         html
     });
     return new Promise((resolve, reject) => {
-        const req = https.request(
-            {
-                hostname: 'api.resend.com',
-                path:     '/emails',
-                method:   'POST',
-                headers:  {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type':  'application/json',
-                    'Content-Length': Buffer.byteLength(payload)
-                }
-            },
-            (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                        resolve({ sent: true, messageId: JSON.parse(data).id });
-                    } else {
-                        reject(new Error(`Resend ${res.statusCode}: ${data}`));
-                    }
-                });
+        const req = https.request({
+            hostname: 'api.resend.com',
+            path:     '/emails',
+            method:   'POST',
+            headers: {
+                'Authorization':  `Bearer ${apiKey}`,
+                'Content-Type':   'application/json',
+                'Content-Length': Buffer.byteLength(payload)
             }
-        );
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    resolve({ sent: true, messageId: JSON.parse(data).id });
+                } else {
+                    reject(new Error(`Resend ${res.statusCode}: ${data}`));
+                }
+            });
+        });
         req.on('error', reject);
         req.write(payload);
         req.end();
     });
 }
 
-/* ── nodemailer SMTP helper ──
-   Local dev  → port 587, secure: false  (default, nothing extra needed in .env)
-   Railway    → port 465, secure: true   (set EMAIL_PORT=465 EMAIL_SECURE=true)
-*/
+/* ── 3. nodemailer SMTP (local dev only — Railway blocks all SMTP ports) ── */
 let emailTransporter = null;
 function getTransporter() {
     if (!emailTransporter) {
         const port   = parseInt(process.env.EMAIL_PORT || '587');
         const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
         emailTransporter = nodemailer.createTransport({
-            host:   process.env.EMAIL_HOST || 'smtp.gmail.com',
+            host: process.env.EMAIL_HOST || 'smtp.gmail.com',
             port,
             secure,
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASSWORD
-            }
+            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD }
         });
     }
     return emailTransporter;
 }
 
 async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = false }) {
-    /* Skip entirely only if BOTH methods are unconfigured */
+    const hasBrevo  = !!process.env.BREVO_API_KEY;
     const hasResend = !!process.env.RESEND_API_KEY;
-    const hasSmtp   = process.env.EMAIL_USER && process.env.EMAIL_USER !== 'your_email@gmail.com';
-    if (!hasResend && !hasSmtp) {
-        console.log('⚠️  Email not configured – skipping for:', toEmail);
+    const hasSmtp   = process.env.EMAIL_USER && process.env.EMAIL_USER !== 'your_email@gmail.com'
+                      && !process.env.EMAIL_USER.includes('@smtp-brevo');
+    if (!hasBrevo && !hasResend && !hasSmtp) {
+        console.log('⚠️  No email provider configured – skipping for:', toEmail);
         return { skipped: true };
     }
 
@@ -349,43 +377,30 @@ async function sendReminderEmail({ toEmail, childName, vaccines, isUrgent = fals
   </table>
 </body></html>`;
 
+    /* ── Try providers in priority order ── */
     try {
-        if (hasResend) {
-            /* ── CLOUD PATH: Try Resend first, fall back to SMTP if Resend
-               returns 403 (free tier only allows sending to verified email) ── */
-            try {
-                const info = await sendViaResend({ toEmail, subject, html, fromName });
-                console.log(`✉️  [Resend] Email sent to ${toEmail}:`, info.messageId);
-                return { sent: true, messageId: info.messageId };
-            } catch (resendErr) {
-                console.warn(`⚠️  Resend failed (${resendErr.message}) — trying SMTP fallback`);
-                if (!hasSmtp) throw resendErr; // no SMTP configured either
-                const info = await getTransporter().sendMail({
-                    from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-                    to:   toEmail,
-                    subject,
-                    html
-                });
-                console.log(`✉️  [SMTP fallback] Email sent to ${toEmail}:`, info.messageId);
-                return { sent: true, messageId: info.messageId };
-            }
-        } else {
-            /* ── LOCAL PATH: nodemailer Gmail SMTP only ── */
-            const info = await getTransporter().sendMail({
-                from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-                to:   toEmail,
-                subject,
-                html
-            });
-            console.log(`✉️  [SMTP] Email sent to ${toEmail}:`, info.messageId);
+        if (hasBrevo) {
+            const info = await sendViaBrevo({ toEmail, subject, html, fromName });
+            console.log(`✉️  [Brevo] Email sent to ${toEmail}:`, info.messageId);
             return { sent: true, messageId: info.messageId };
         }
+        if (hasResend) {
+            const info = await sendViaResend({ toEmail, subject, html, fromName });
+            console.log(`✉️  [Resend] Email sent to ${toEmail}:`, info.messageId);
+            return { sent: true, messageId: info.messageId };
+        }
+        /* Local dev SMTP fallback */
+        const info = await getTransporter().sendMail({
+            from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+            to:   toEmail, subject, html
+        });
+        console.log(`✉️  [SMTP] Email sent to ${toEmail}:`, info.messageId);
+        return { sent: true, messageId: info.messageId };
     } catch (err) {
         console.error('❌  Email send error:', err.message);
         return { sent: false, error: err.message };
     }
 }
-
 
 /* ─────────────────────────── FCM PUSH NOTIFICATION ─────────────────────────── */
 
